@@ -14,6 +14,9 @@ namespace IYS.Gateway.Infrastructure.IysApi;
 /// FirmGuid'den IYS credentials, brandCode ve token'ı çözer.
 /// Her request'te çağrılır ve tüm auto-resolved parametreleri IysFirmContext olarak döner.
 /// brandCode resolve sonucu IysTokenCacheMongo'da cache'lenir (24 saatlik geçerlilik).
+/// 
+/// ExecuteWithRetryAsync: API çağrılarını 401 auto-retry ile sarar.
+/// Token expire olmuşsa → yeni token al → retry → kullanıcı hata görmez.
 /// </summary>
 public class IysFirmResolver : IIysFirmResolver
 {
@@ -24,6 +27,9 @@ public class IysFirmResolver : IIysFirmResolver
 
     /// <summary>brandCode cache geçerlilik süresi (saat)</summary>
     private const int BrandCodeCacheHours = 24;
+
+    /// <summary>401 sonrası maksimum retry sayısı</summary>
+    private const int MaxRetryCount = 1;
 
     public IysFirmResolver(
         IIysTokenManager tokenManager,
@@ -53,7 +59,7 @@ public class IysFirmResolver : IIysFirmResolver
 
         var iysCode = int.Parse(firm.IysCustomerCode!);
 
-        // 2. Token al (cache/refresh/yeni)
+        // 2. Token al (cache/refresh/yeni — stampede korumalı)
         var accessToken = await _tokenManager.GetValidTokenAsync(firmGuid);
 
         // 3. BrandCode çözümle (cache'den veya API'den)
@@ -68,6 +74,27 @@ public class IysFirmResolver : IIysFirmResolver
             BrandCode = brandCode,
             AccessToken = accessToken
         };
+    }
+
+    /// <inheritdoc/>
+    public async Task<TResult?> ExecuteWithRetryAsync<TResult>(Guid firmGuid, Func<IysFirmContext, Task<TResult?>> apiCall)
+    {
+        var context = await ResolveAsync(firmGuid);
+
+        try
+        {
+            return await apiCall(context);
+        }
+        catch (IysTokenExpiredException)
+        {
+            // 401 geldi → token zorla yenile ve retry
+            _logger.LogWarning("FirmGuid {FirmGuid}: Token expire oldu, zorla yenilenip retry yapılıyor.", firmGuid);
+
+            var newToken = await _tokenManager.ForceRefreshTokenAsync(firmGuid);
+            context.AccessToken = newToken;
+
+            return await apiCall(context);
+        }
     }
 
     /// <summary>

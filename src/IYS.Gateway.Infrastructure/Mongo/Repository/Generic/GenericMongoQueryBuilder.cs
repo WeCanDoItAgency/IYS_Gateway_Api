@@ -524,6 +524,20 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             return result;
         }
 
+        public async Task InsertOneAsync(T document, CancellationToken ct = default)
+        {
+            await _collection.InsertOneAsync(document, cancellationToken: ct);
+        }
+
+        public async Task<DeleteResult> DeleteOneAsync(CancellationToken ct = default)
+        {
+            var sw = Stopwatch.StartNew();
+            var result = await _collection.DeleteOneAsync(_filter, ct);
+            sw.Stop();
+            CheckAndHealIndexes(sw, _collection, _filter);
+            return result;
+        }
+
         private async Task<List<T>> ExecuteAggregationAsync(CancellationToken ct)
         {
             var pipeline = new List<BsonDocument>();

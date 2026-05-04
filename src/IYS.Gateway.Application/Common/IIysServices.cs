@@ -10,10 +10,20 @@ public interface IIysTokenManager
     /// <summary>
     /// Firma için geçerli bir access token döner.
     /// Aktif token varsa kullanır, refresh edilebilirse refresh eder, yoksa yeni alır.
+    /// Stampede korumalı: aynı firma için paralel isteklerde sadece 1 token alınır.
     /// </summary>
     /// <param name="firmGuid">Firmanın benzersiz tanımlayıcısı</param>
     /// <returns>Geçerli access token string'i</returns>
     Task<string> GetValidTokenAsync(Guid firmGuid);
+
+    /// <summary>
+    /// Token'ı zorla yeniler. 401 hatası sonrası çağrılır.
+    /// Cache'deki token invalidate edilir ve yeni token alınır.
+    /// Stampede korumalı.
+    /// </summary>
+    /// <param name="firmGuid">Firmanın benzersiz tanımlayıcısı</param>
+    /// <returns>Yeni access token string'i</returns>
+    Task<string> ForceRefreshTokenAsync(Guid firmGuid);
 }
 
 /// <summary>
@@ -28,6 +38,16 @@ public interface IIysFirmResolver
     /// <param name="firmGuid">Firmanın benzersiz tanımlayıcısı</param>
     /// <returns>Tüm auto-resolved parametreleri içeren IysFirmContext</returns>
     Task<IysFirmContext> ResolveAsync(Guid firmGuid);
+
+    /// <summary>
+    /// API çağrısını 401 auto-retry ile çalıştırır.
+    /// İlk denemede 401 gelirse token zorla yenilenir ve tek sefer retry yapılır.
+    /// </summary>
+    /// <typeparam name="TResult">API çağrısının dönüş tipi</typeparam>
+    /// <param name="firmGuid">Firma tanımlayıcısı</param>
+    /// <param name="apiCall">Çalıştırılacak API çağrısı (context parametre olarak verilir)</param>
+    /// <returns>API çağrısının sonucu</returns>
+    Task<TResult?> ExecuteWithRetryAsync<TResult>(Guid firmGuid, Func<IysFirmContext, Task<TResult?>> apiCall);
 }
 
 /// <summary>

@@ -62,5 +62,9 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
         Task<UpdateResult> UpsertOneAsync(UpdateDefinition<T> update, CancellationToken ct = default);
         Task<T?> FindOneAndUpdateAsync(UpdateDefinition<T> update, bool returnAfter = true, CancellationToken ct = default);
         Task<T?> FindOneAndDeleteAsync(CancellationToken ct = default);
+
+        // Insert & Delete
+        Task InsertOneAsync(T document, CancellationToken ct = default);
+        Task<DeleteResult> DeleteOneAsync(CancellationToken ct = default);
     }
 }

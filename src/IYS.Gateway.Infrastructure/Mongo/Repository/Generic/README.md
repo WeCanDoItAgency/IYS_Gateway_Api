@@ -422,20 +422,46 @@ var yeniSube = new SubelerMongo
     IsActive = true 
 };
 
-// Tekli Ekleme
+// Tekli Ekleme (Repository seviyesi)
 await _mongoRepo.InsertAsync(yeniSube);
 
 // Çoklu Ekleme (Performanslı)
 var subeListesi = new List<SubelerMongo> { /* ... */ };
 await _mongoRepo.InsertManyAsync(subeListesi);
+
+// Query Builder üzerinden Tekli Ekleme (belirli server/db hedefli)
+var lockDoc = new IysTokenLockMongo
+{
+    FirmGuid = firmGuid,
+    LockedBy = Environment.MachineName,
+    CreatedAt = DateTime.Now
+};
+await repo.Query<IysTokenLockMongo>(OurMongosServer.MONGO_52, "tokenDb")
+    .InsertOneAsync(lockDoc);
 ```
 
 ### B. Veri Silme (Delete)
 ```csharp
-// 1. Direkt ID ile Tekli Silme
+// 1. Direkt ID ile Tekli Silme (Repository seviyesi)
 await _mongoRepo.DeleteAsync<SubelerMongo>("6633b4...id...");
 
-// 2. Şarta Göre Toplu Silme (DeleteMany)
-// Pasif olan ve MssqlId'si 100'den küçük olan tüm kayıtları sil
+// 2. Şarta Göre Toplu Silme (DeleteMany — Repository seviyesi)
 await _mongoRepo.DeleteManyAsync<SubelerMongo>(x => x.IsActive == false && x.MssqlId < 100);
+
+// 3. Query Builder üzerinden Filtrelenmiş Tekli Silme
+var deleteResult = await repo.Query<IysTokenLockMongo>(OurMongosServer.MONGO_52, "tokenDb")
+    .Where(x => x.FirmGuid == firmGuidStr)
+    .DeleteOneAsync();
+// deleteResult.DeletedCount → 1 ise başarılı, 0 ise kayıt bulunamadı
 ```
+
+> [!TIP]
+> **InsertOneAsync vs InsertAsync — Fark Nedir?**
+>
+> | Metot | Seviye | Server/DB Hedefli | Kullanım |
+> |:------|:-------|:-----------------|:---------|
+> | `InsertAsync` | Repository | Varsayılan DB | Genel veri ekleme |
+> | `InsertOneAsync` | QueryBuilder | ✅ `.Query<T>(server, db)` | Belirli server/db'ye ekleme, distributed lock gibi senaryolar |
+> | `DeleteAsync` | Repository | Varsayılan DB | ID ile silme |
+> | `DeleteOneAsync` | QueryBuilder | ✅ `.Where().DeleteOneAsync()` | Filtre bazlı silme, distributed lock release |
+
