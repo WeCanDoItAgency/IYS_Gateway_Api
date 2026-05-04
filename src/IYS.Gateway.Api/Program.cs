@@ -31,8 +31,8 @@ var iysBaseUrl = useProduction
     ? builder.Configuration["IysApi:ProductionBaseUrl"]!
     : builder.Configuration["IysApi:BaseUrl"]!;
 
-// ─── Infrastructure DI (HttpClient + Polly + Token Manager + Firm Resolver) ──
-builder.Services.AddInfrastructure(iysBaseUrl);
+// ─── Infrastructure DI (HttpClient + Polly + Token Manager + Firm Resolver + Consent Tracking) ──
+builder.Services.AddInfrastructure(iysBaseUrl, builder.Configuration);
 
 // ─── HttpContext Accessor (Servis handler'larında FirmGuid erişimi için) ──
 builder.Services.AddHttpContextAccessor();

@@ -1,9 +1,12 @@
 using IYS.Gateway.Application.Common;
 using IYS.Gateway.Application.Services;
+using IYS.Gateway.Infrastructure.Data;
 using IYS.Gateway.Infrastructure.HealthChecks;
 using IYS.Gateway.Infrastructure.IysApi;
 using IYS.Gateway.Infrastructure.Services;
 using IYS.Gateway.Infrastructure.Startup;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.Extensions.Http;
@@ -12,11 +15,12 @@ namespace IYS.Gateway.Infrastructure;
 
 /// <summary>
 /// Infrastructure katmanı DI kayıtları.
-/// IYS API client (Polly ile), token manager, firm resolver ve iş servisleri kaydeder.
+/// IYS API client (Polly ile), token manager, firm resolver, iş servisleri,
+/// consent tracker ve blacklist sync servislerini kaydeder.
 /// </summary>
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string iysBaseUrl)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string iysBaseUrl, IConfiguration configuration)
     {
         // IYS API Typed HttpClient + Polly resiliency
         services.AddHttpClient<IIysApiClient, IysApiClient>(client =>
@@ -41,6 +45,30 @@ public static class DependencyInjection
         services.AddScoped<IConsentService, ConsentService>();
         services.AddScoped<IBrandService, BrandService>();
         services.AddScoped<IViaService, ViaService>();
+
+        // ══════════════════════════════════════════════════════════
+        // IYS Consent Tracking + Blacklist Sync
+        // ══════════════════════════════════════════════════════════
+
+        // Config — SQL kapatılabilirlik toggle
+        services.Configure<BlacklistSyncConfig>(
+            configuration.GetSection(BlacklistSyncConfig.SectionName));
+
+        // MSSQL DbContext — BusinessRulesLog karaliste/beyazliste
+        var sqlConnectionString = configuration.GetConnectionString("Acente365Db")
+            ?? configuration["GlobalAdresses:Acente365SqlConnectionString"];
+        
+        if (!string.IsNullOrEmpty(sqlConnectionString))
+        {
+            services.AddDbContext<Acente365DbContext>(options =>
+                options.UseSqlServer(sqlConnectionString));
+        }
+
+        // Servisler
+        services.AddScoped<IBlacklistSyncService, BlacklistSyncService>();
+        services.AddScoped<IIysConsentTracker, IysConsentTracker>();
+
+        // ══════════════════════════════════════════════════════════
 
         // [IMPROVEMENT #8] Health Check — MongoDB + IYS API erişilebilirlik
         services.AddHttpClient("IysHealthCheck", client =>
