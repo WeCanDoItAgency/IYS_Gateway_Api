@@ -33,15 +33,13 @@ public interface IIysDistributedCache
 /// </summary>
 public class IysDistributedCache : IIysDistributedCache
 {
-    private readonly IGenericMongoRepository _mongoRepo;
+    private readonly GenericMongoRepository _repo;
     private readonly ILogger<IysDistributedCache> _logger;
     private readonly string _database;
 
-    public IysDistributedCache(
-        IGenericMongoRepository mongoRepo,
-        ILogger<IysDistributedCache> logger)
+    public IysDistributedCache(ILogger<IysDistributedCache> logger)
     {
-        _mongoRepo = mongoRepo;
+        _repo = new GenericMongoRepository();
         _logger = logger;
         _database = GlobalAppSettings.Instance.Get<string>("GlobalAdresses:MongoDbSettings52Database");
     }
@@ -50,7 +48,7 @@ public class IysDistributedCache : IIysDistributedCache
     {
         var cacheKey = BuildCacheKey(firmGuid, endpoint, parameters);
 
-        var cached = await _mongoRepo.Query<IysResponseCacheMongo>(OurMongosServer.MONGO_52, _database)
+        var cached = await _repo.Query<IysResponseCacheMongo>(OurMongosServer.MONGO_52, _database)
             .Where(x => x.CacheKey == cacheKey)
             .FirstOrDefaultAsync();
 
@@ -84,7 +82,7 @@ public class IysDistributedCache : IIysDistributedCache
         try
         {
             // Upsert — varsa güncelle, yoksa ekle
-            var collection = _mongoRepo.GetCollection<IysResponseCacheMongo>(OurMongosServer.MONGO_52, _database);
+            var collection = _repo.GetCollection<IysResponseCacheMongo>(OurMongosServer.MONGO_52, _database);
             await collection.ReplaceOneAsync(
                 Builders<IysResponseCacheMongo>.Filter.Eq(x => x.CacheKey, cacheKey),
                 doc,
@@ -100,7 +98,7 @@ public class IysDistributedCache : IIysDistributedCache
     {
         try
         {
-            var collection = _mongoRepo.GetCollection<IysResponseCacheMongo>(OurMongosServer.MONGO_52, _database);
+            var collection = _repo.GetCollection<IysResponseCacheMongo>(OurMongosServer.MONGO_52, _database);
             var result = await collection.DeleteManyAsync(
                 Builders<IysResponseCacheMongo>.Filter.Eq(x => x.FirmGuid, firmGuid));
 

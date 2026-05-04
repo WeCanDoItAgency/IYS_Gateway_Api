@@ -41,16 +41,7 @@ public class IysEnumDescriptionFilter : IOperationFilter
                 if (values.Count > 0)
                 {
                     enumInfos.Add((param.Name!, values));
-
-                    // Swagger parameter schema'sına da enum ekle
-                    var swaggerParam = operation.Parameters?
-                        .FirstOrDefault(p => p.Name.Equals(param.Name, StringComparison.OrdinalIgnoreCase));
-                    if (swaggerParam != null)
-                    {
-                        swaggerParam.Schema.Enum = values
-                            .Select(v => (IOpenApiAny)new OpenApiString(v))
-                            .ToList();
-                    }
+                    // NOT: Schema.Enum eklenmez — dropdown yerine text input + tablo gösterilir
                 }
             }
 
