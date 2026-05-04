@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IYS.Gateway.Api/IYS.Gateway.Api.csproj" />
+    <Project Path="src/IYS.Gateway.Application/IYS.Gateway.Application.csproj" />
+    <Project Path="src/IYS.Gateway.Domain/IYS.Gateway.Domain.csproj" />
+    <Project Path="src/IYS.Gateway.Infrastructure/IYS.Gateway.Infrastructure.csproj" />
+  </Folder>
+</Solution>
