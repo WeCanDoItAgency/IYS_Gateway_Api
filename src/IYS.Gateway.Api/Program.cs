@@ -2,8 +2,12 @@ using Azure.Extensions.AspNetCore.Configuration.Secrets;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 using IYS.Gateway.Api.Middleware;
+using System.Text.Json;
 using IYS.Gateway.Infrastructure;
 using IYS.Gateway.Infrastructure.Mongo.Settings;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +36,16 @@ builder.Services.AddInfrastructure(iysBaseUrl);
 
 // ─── HttpContext Accessor (Servis handler'larında FirmGuid erişimi için) ──
 builder.Services.AddHttpContextAccessor();
+
+// ─── [IMPROVEMENT #5] Response Compression — gzip/brotli ────────
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+        new[] { "application/json" });
+});
 
 // ─── Controllers + Swagger ──────────────────────────────────────
 builder.Services.AddControllers()
@@ -69,17 +83,21 @@ builder.Services.AddSwaggerGen(c =>
     c.OperationFilter<IYS.Gateway.Api.Swagger.IysEnumDescriptionFilter>();
 });
 
-// ─── Health Check ───────────────────────────────────────────────
-builder.Services.AddHealthChecks();
-
 var app = builder.Build();
 
-// ─── Middleware Pipeline ────────────────────────────────────────
+// ─── Middleware Pipeline (sıra önemli!) ─────────────────────────
+
+// [IMPROVEMENT #5] Response Compression — en erken çalışmalı
+app.UseResponseCompression();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "IYS Gateway API v1"));
 }
+
+// [IMPROVEMENT #4] Correlation ID — tüm middleware'lerden önce log scope aç
+app.UseCorrelationId();
 
 // Global hata yakalama — tüm exception'ları JSON yanıta dönüştürür
 app.UseGlobalExceptionHandler();
@@ -89,6 +107,28 @@ app.UseFirmGuidValidation();
 
 app.UseAuthorization();
 app.MapControllers();
-app.MapHealthChecks("/health");
+
+// [IMPROVEMENT #8] Health Check — detaylı JSON response
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var result = new
+        {
+            status = report.Status.ToString(),
+            duration = report.TotalDuration.TotalMilliseconds + "ms",
+            checks = report.Entries.Select(e => new
+            {
+                name = e.Key,
+                status = e.Value.Status.ToString(),
+                description = e.Value.Description,
+                data = e.Value.Data
+            })
+        };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(result,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
+    }
+});
 
 app.Run();

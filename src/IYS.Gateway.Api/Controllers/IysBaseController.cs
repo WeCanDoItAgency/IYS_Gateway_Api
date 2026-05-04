@@ -6,17 +6,19 @@ namespace IYS.Gateway.Api.Controllers;
 
 /// <summary>
 /// Tüm IYS Gateway controller'ları için temel sınıf.
-/// FirmGuid çözümleme ve IysFirmContext erişimi sağlar.
+/// FirmGuid çözümleme, loglama ve IysFirmContext erişimi sağlar.
 /// </summary>
 [ApiController]
 [Route("api/iys")]
 public abstract class IysBaseController : ControllerBase
 {
     private readonly IIysFirmResolver _firmResolver;
+    protected readonly ILogger Logger;
 
-    protected IysBaseController(IIysFirmResolver firmResolver)
+    protected IysBaseController(IIysFirmResolver firmResolver, ILogger logger)
     {
         _firmResolver = firmResolver;
+        Logger = logger;
     }
 
     /// <summary>
@@ -25,6 +27,14 @@ public abstract class IysBaseController : ControllerBase
     protected Guid GetFirmGuid()
     {
         return (Guid)HttpContext.Items[FirmGuidValidationMiddleware.FirmGuidItemKey]!;
+    }
+
+    /// <summary>
+    /// HttpContext'ten CorrelationId'yi alır.
+    /// </summary>
+    protected string GetCorrelationId()
+    {
+        return HttpContext.Items[CorrelationIdMiddleware.ItemKey]?.ToString() ?? "N/A";
     }
 
     /// <summary>

@@ -1,7 +1,9 @@
 using IYS.Gateway.Application.Common;
 using IYS.Gateway.Application.Services;
+using IYS.Gateway.Infrastructure.HealthChecks;
 using IYS.Gateway.Infrastructure.IysApi;
 using IYS.Gateway.Infrastructure.Services;
+using IYS.Gateway.Infrastructure.Startup;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.Extensions.Http;
@@ -32,10 +34,26 @@ public static class DependencyInjection
         // Firm Resolver — FirmGuid → credentials + brandCode + token
         services.AddScoped<IIysFirmResolver, IysFirmResolver>();
 
+        // Distributed Cache — MongoDB tabanlı, tüm pod'lar paylaşır
+        services.AddSingleton<IIysDistributedCache, IysDistributedCache>();
+
         // İş Servisleri — Controller'lara doğrudan inject edilir
         services.AddScoped<IConsentService, ConsentService>();
         services.AddScoped<IBrandService, BrandService>();
         services.AddScoped<IViaService, ViaService>();
+
+        // [IMPROVEMENT #8] Health Check — MongoDB + IYS API erişilebilirlik
+        services.AddHttpClient("IysHealthCheck", client =>
+        {
+            client.BaseAddress = new Uri(iysBaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(5);
+        });
+        services.AddHealthChecks()
+            .AddCheck<MongoHealthCheck>("mongodb", tags: new[] { "db", "mongo" })
+            .AddCheck<IysApiHealthCheck>("iys-api", tags: new[] { "external", "iys" });
+
+        // [STARTUP] MongoDB Index'leri — uygulama Ready olmadan önce oluşturulur
+        services.AddHostedService<MongoIndexInitializer>();
 
         return services;
     }

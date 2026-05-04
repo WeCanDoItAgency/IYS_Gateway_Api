@@ -61,47 +61,7 @@ public class IysTokenManager : IIysTokenManager
         _logger = logger;
         _repo = new GenericMongoRepository();
         _tokenDb = GlobalAppSettings.Instance.Get<string>("GlobalAdresses:MongoDbSettings52Database")!;
-
-        // Startup'ta indexleri oluştur (idempotent — varsa atlar)
-        _ = EnsureIndexesAsync();
-    }
-
-    /// <summary>
-    /// IysTokenLock collection'ı üzerinde gerekli indexleri oluşturur.
-    /// - FirmGuid unique index: aynı firma için tek lock garantisi
-    /// - CreatedAt TTL index: 30 saniye sonra ölü lock'ları otomatik temizler
-    /// Idempotent: index zaten varsa sessizce atlar.
-    /// </summary>
-    private async Task EnsureIndexesAsync()
-    {
-        try
-        {
-            var db = GenericMongoConnectionManager.Instance.GetDatabase(OurMongosServer.MONGO_52, _tokenDb);
-            var collection = db.GetCollection<IysTokenLockMongo>(
-                GetCollectionName<IysTokenLockMongo>());
-
-            var indexModels = new List<CreateIndexModel<IysTokenLockMongo>>
-            {
-                // Unique index: aynı firma için sadece 1 lock
-                new(
-                    Builders<IysTokenLockMongo>.IndexKeys.Ascending(x => x.FirmGuid),
-                    new CreateIndexOptions { Unique = true, Name = "idx_firmguid_unique" }
-                ),
-                // TTL index: 30 saniye sonra ölü lock'ları otomatik sil
-                new(
-                    Builders<IysTokenLockMongo>.IndexKeys.Ascending(x => x.CreatedAt),
-                    new CreateIndexOptions { ExpireAfter = TimeSpan.FromSeconds(30), Name = "idx_createdAt_ttl30s" }
-                )
-            };
-
-            await collection.Indexes.CreateManyAsync(indexModels);
-            _logger.LogInformation("IysTokenLock indexleri doğrulandı/oluşturuldu.");
-        }
-        catch (Exception ex)
-        {
-            // Index oluşturma başarısız olsa da uygulama çalışmaya devam etmeli
-            _logger.LogWarning(ex, "IysTokenLock index oluşturma hatası (uygulama çalışmaya devam ediyor).");
-        }
+        // Index'ler MongoIndexInitializer (IHostedService) tarafından startup'ta oluşturulur
     }
 
     private static string GetCollectionName<TEntity>()

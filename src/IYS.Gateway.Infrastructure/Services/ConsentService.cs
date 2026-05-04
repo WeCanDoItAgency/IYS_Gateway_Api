@@ -1,6 +1,7 @@
 using IYS.Gateway.Application.Common;
 using IYS.Gateway.Application.Services;
 using IYS.Gateway.Domain.Constants;
+using IYS.Gateway.Infrastructure.IysApi;
 
 namespace IYS.Gateway.Infrastructure.Services;
 
@@ -8,16 +9,22 @@ namespace IYS.Gateway.Infrastructure.Services;
 /// İzin yönetimi servis implementasyonu.
 /// FirmGuid ile IysFirmResolver → IysApiClient zincirini çalıştırır.
 /// Tüm API çağrıları ExecuteWithRetryAsync ile sarılır → 401 auto-retry aktif.
+/// Tekil durum sorgulamaları distributed cache ile korunur (30sn).
 /// </summary>
 public class ConsentService : IConsentService
 {
     private readonly IIysFirmResolver _firmResolver;
     private readonly IIysApiClient _apiClient;
+    private readonly IIysDistributedCache _cache;
 
-    public ConsentService(IIysFirmResolver firmResolver, IIysApiClient apiClient)
+    /// <summary>Consent status cache süresi — 30 saniye (sık değişebilir)</summary>
+    private const int ConsentStatusCacheTtlSeconds = 30;
+
+    public ConsentService(IIysFirmResolver firmResolver, IIysApiClient apiClient, IIysDistributedCache cache)
     {
         _firmResolver = firmResolver;
         _apiClient = apiClient;
+        _cache = cache;
     }
 
     public async Task<object?> AddSingleConsentAsync(Guid firmGuid, object body)
@@ -76,11 +83,22 @@ public class ConsentService : IConsentService
 
     public async Task<object?> GetSingleConsentStatusAsync(Guid firmGuid, object body)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        var firmGuidStr = firmGuid.ToString();
+
+        // Cache kontrolü — aynı firma + aynı parametreler için 30sn cache
+        var cached = await _cache.GetAsync<object>(firmGuidStr, "consent_status", body);
+        if (cached != null) return cached;
+
+        var result = await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetSingleConsentStatus, ctx.IysCode, ctx.BrandCode);
             return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
         });
+
+        if (result != null)
+            await _cache.SetAsync(firmGuidStr, "consent_status", result, ConsentStatusCacheTtlSeconds, body);
+
+        return result;
     }
 
     public async Task<object?> GetMultipleConsentStatusAsync(Guid firmGuid, string recipientType, string type, object body)

@@ -3,6 +3,7 @@ using IYS.Gateway.Application.Models.Consent;
 using IYS.Gateway.Application.Services;
 using Microsoft.AspNetCore.Mvc;
 
+
 namespace IYS.Gateway.Api.Controllers;
 
 /// <summary>
@@ -20,7 +21,10 @@ public class ConsentController : IysBaseController
 {
     private readonly IConsentService _consentService;
 
-    public ConsentController(IIysFirmResolver firmResolver, IConsentService consentService) : base(firmResolver)
+    public ConsentController(
+        IIysFirmResolver firmResolver,
+        IConsentService consentService,
+        ILogger<ConsentController> logger) : base(firmResolver, logger)
     {
         _consentService = consentService;
     }
@@ -57,10 +61,12 @@ public class ConsentController : IysBaseController
     /// ```
     /// </remarks>
     /// <param name="request">İzin bilgileri</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent")]
-    public async Task<IActionResult> AddSingleConsent([FromBody] AddSingleConsentRequest request)
+    public async Task<IActionResult> AddSingleConsent([FromBody] AddSingleConsentRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
+        Logger.LogInformation("Tekil izin ekleme başlatıldı. Firma: {FirmGuid}, Alıcı: {Recipient}", firmGuid, request.Recipient);
         var result = await _consentService.AddSingleConsentAsync(firmGuid, request);
         return Ok(result);
     }
@@ -76,10 +82,12 @@ public class ConsentController : IysBaseController
     /// Parametreler v1 ile aynıdır. Response formatı geliştirilmiştir.
     /// </remarks>
     /// <param name="request">İzin bilgileri</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/v2")]
-    public async Task<IActionResult> AddSingleConsentV2([FromBody] AddSingleConsentRequest request)
+    public async Task<IActionResult> AddSingleConsentV2([FromBody] AddSingleConsentRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
+        Logger.LogInformation("Tekil izin ekleme (v2) başlatıldı. Firma: {FirmGuid}", firmGuid);
         var result = await _consentService.AddSingleConsentV2Async(firmGuid, request);
         return Ok(result);
     }
@@ -113,10 +121,12 @@ public class ConsentController : IysBaseController
     /// ```
     /// </remarks>
     /// <param name="request">Toplu izin listesi</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/batch")]
-    public async Task<IActionResult> AddBatchConsent([FromBody] AddBatchConsentRequest request)
+    public async Task<IActionResult> AddBatchConsent([FromBody] AddBatchConsentRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
+        Logger.LogInformation("Toplu izin ekleme başlatıldı. Firma: {FirmGuid}, Kayıt Sayısı: {Count}", firmGuid, request.Consents?.Count ?? 0);
         var result = await _consentService.AddBatchConsentAsync(firmGuid, request);
         return Ok(result);
     }
@@ -130,10 +140,12 @@ public class ConsentController : IysBaseController
     /// **Rate Limit:** Dakikada 2 istek, maksimum 10.000 kayıt/istek
     /// </remarks>
     /// <param name="request">Toplu izin listesi</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/batch/v2")]
-    public async Task<IActionResult> AddBatchConsentV2([FromBody] AddBatchConsentRequest request)
+    public async Task<IActionResult> AddBatchConsentV2([FromBody] AddBatchConsentRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
+        Logger.LogInformation("Toplu izin ekleme (v2) başlatıldı. Firma: {FirmGuid}", firmGuid);
         var result = await _consentService.AddBatchConsentV2Async(firmGuid, request);
         return Ok(result);
     }
@@ -151,8 +163,9 @@ public class ConsentController : IysBaseController
     /// **Rate Limit:** Dakikada 20 istek
     /// </remarks>
     /// <param name="requestId">Toplu izin isteğinin requestId değeri</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpGet("consent/batch/{requestId}")]
-    public async Task<IActionResult> GetBatchConsentStatus(string requestId)
+    public async Task<IActionResult> GetBatchConsentStatus(string requestId, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
         var result = await _consentService.GetBatchConsentStatusAsync(firmGuid, requestId);
@@ -168,8 +181,9 @@ public class ConsentController : IysBaseController
     /// **Rate Limit:** Dakikada 20 istek
     /// </remarks>
     /// <param name="requestId">Toplu izin isteğinin requestId değeri</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpGet("consent/batch/v2/{requestId}")]
-    public async Task<IActionResult> GetBatchConsentStatusV2(string requestId)
+    public async Task<IActionResult> GetBatchConsentStatusV2(string requestId, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
         var result = await _consentService.GetBatchConsentStatusV2Async(firmGuid, requestId);
@@ -198,8 +212,9 @@ public class ConsentController : IysBaseController
     /// ```
     /// </remarks>
     /// <param name="request">Sorgulanacak alıcı bilgileri</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/status")]
-    public async Task<IActionResult> GetSingleConsentStatus([FromBody] GetConsentStatusRequest request)
+    public async Task<IActionResult> GetSingleConsentStatus([FromBody] GetConsentStatusRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
         var result = await _consentService.GetSingleConsentStatusAsync(firmGuid, request);
@@ -228,8 +243,9 @@ public class ConsentController : IysBaseController
     /// <param name="recipientType">Alıcı tipi: BIREYSEL | TACIR</param>
     /// <param name="type">İzin türü: ARAMA | MESAJ | EPOSTA</param>
     /// <param name="request">Alıcı listesi</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/status/{recipientType}/{type}")]
-    public async Task<IActionResult> GetMultipleConsentStatus(string recipientType, string type, [FromBody] GetMultipleConsentStatusRequest request)
+    public async Task<IActionResult> GetMultipleConsentStatus(string recipientType, string type, [FromBody] GetMultipleConsentStatusRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
         var result = await _consentService.GetMultipleConsentStatusAsync(firmGuid, recipientType, type, request);
@@ -258,8 +274,9 @@ public class ConsentController : IysBaseController
     /// ```
     /// </remarks>
     /// <param name="request">Geçmiş sorgulanacak alıcı bilgileri</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/history")]
-    public async Task<IActionResult> GetConsentHistory([FromBody] GetConsentHistoryRequest request)
+    public async Task<IActionResult> GetConsentHistory([FromBody] GetConsentHistoryRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
         var result = await _consentService.GetConsentHistoryAsync(firmGuid, request);
@@ -281,8 +298,9 @@ public class ConsentController : IysBaseController
     /// <param name="after">Son alınan kayıdın cursor değeri</param>
     /// <param name="limit">Sayfa başı kayıt sayısı (varsayılan: 500)</param>
     /// <param name="source">Kaynak filtresi (opsiyonel)</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpGet("consent/changes")]
-    public async Task<IActionResult> GetConsentChanges([FromQuery] string? after, [FromQuery] int? limit, [FromQuery] string? source)
+    public async Task<IActionResult> GetConsentChanges([FromQuery] string? after, [FromQuery] int? limit, [FromQuery] string? source, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
         var queryParams = new Dictionary<string, string>();
@@ -315,10 +333,12 @@ public class ConsentController : IysBaseController
     /// ```
     /// </remarks>
     /// <param name="request">Push bildirim kayıt bilgileri</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/push/register")]
-    public async Task<IActionResult> RegisterPush([FromBody] RegisterPushRequest request)
+    public async Task<IActionResult> RegisterPush([FromBody] RegisterPushRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
+        Logger.LogInformation("Push bildirim kaydı oluşturuluyor. Firma: {FirmGuid}", firmGuid);
         var result = await _consentService.RegisterPushAsync(firmGuid, request);
         return Ok(result);
     }
@@ -331,8 +351,9 @@ public class ConsentController : IysBaseController
     /// 
     /// **Rate Limit:** Dakikada 5 istek
     /// </remarks>
+    /// <param name="ct">İptal token'ı</param>
     [HttpGet("consent/push/status")]
-    public async Task<IActionResult> GetPushStatus()
+    public async Task<IActionResult> GetPushStatus(CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
         var result = await _consentService.GetPushStatusAsync(firmGuid);
@@ -348,10 +369,12 @@ public class ConsentController : IysBaseController
     /// **Rate Limit:** Dakikada 5 istek
     /// </remarks>
     /// <param name="request">Silinecek push bildirim tipi</param>
+    /// <param name="ct">İptal token'ı</param>
     [HttpPost("consent/push/unregister")]
-    public async Task<IActionResult> UnregisterPush([FromBody] UnregisterPushRequest request)
+    public async Task<IActionResult> UnregisterPush([FromBody] UnregisterPushRequest request, CancellationToken ct)
     {
         var firmGuid = GetFirmGuid();
+        Logger.LogInformation("Push bildirim kaydı siliniyor. Firma: {FirmGuid}", firmGuid);
         var result = await _consentService.UnregisterPushAsync(firmGuid, request);
         return Ok(result);
     }
