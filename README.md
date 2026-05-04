@@ -14,6 +14,10 @@ IYS Gateway API, Türkiye İleti Yönetim Sistemi'nin tüm API endpoint'lerini t
 - 🔄 401 auto-retry — token expire olursa otomatik yenileme + retry
 - 🛡️ Polly ile retry + circuit breaker
 - 📋 Swagger UI ile otomatik enum dokümantasyonu
+- 🔗 Correlation ID — her isteğe benzersiz takip kimliği (X-Correlation-Id)
+- 📦 Response Compression — Brotli/Gzip sıkıştırma
+- 💾 Distributed Cache — MongoDB tabanlı, tüm pod'lar aynı cache'i paylaşır
+- ⏹️ CancellationToken — client disconnect'te kaynak israfını önler
 
 ---
 
@@ -130,6 +134,50 @@ API çağrısı sırasında token expire olursa:
 | Retry | 429, 5xx | 3 deneme, exponential backoff (2s, 4s, 8s) |
 | Circuit Breaker | 5 ardışık hata | 30s devre açık, sonra half-open test |
 
+### Distributed Response Cache (MongoDB)
+
+IYS API yanıtları MONGO_52 üzerinde `IysResponseCache` collection'ında cache'lenir. **Tüm pod'lar aynı cache'i paylaşır** — in-memory cache'den farklı olarak 1000 pod'da bile tek bir cache.
+
+```
+Pod A ─ GetBrands() ──▶ MongoDB cache MISS ──▶ IYS API ──▶ Cache WRITE ──▶ response
+Pod B ─ GetBrands() ──▶ MongoDB cache HIT ──▶ response (IYS API'ye gitmez)
+Pod C ─ GetBrands() ──▶ MongoDB cache HIT ──▶ response (IYS API'ye gitmez)
+```
+
+| Endpoint | Cache Süresi | Neden |
+|:---------|:------------|:------|
+| `brands`, `brand_detail`, `retailers` | 1 saat | Nadiren değişir |
+| `sources` | 24 saat | Sabit IYS kaynakları |
+| `consent_status` | 30 saniye | Sık değişebilir, ama kısa burst koruması sağlar |
+| `via_subscriptions` | 1 saat | Nadiren değişir |
+
+**Index'ler** (startup'ta otomatik oluşturulur):
+- `idx_cachekey_unique` — Unique index, aynı key'den 1 kayıt
+- `idx_ttl_createdAt` — TTL index, 5 dakika sonra otomatik temizlik
+- `idx_firmguid` — Firma bazlı invalidation sorgusu
+
+### MongoDB Index Yönetimi
+
+> ⚠️ **Tüm MongoDB index'leri merkezi olarak `MongoIndexInitializer` (IHostedService) tarafından oluşturulur.**
+
+Dosya: `Infrastructure/Startup/MongoIndexInitializer.cs`
+
+```
+Uygulama başlatılıyor
+    ↓
+MongoIndexInitializer.StartAsync()
+    ├─ IysTokenLock: idx_firmguid_unique + idx_createdAt_ttl30s
+    └─ IysResponseCache: idx_cachekey_unique + idx_ttl_createdAt + idx_firmguid
+    ↓
+Uygulama READY
+```
+
+**Kurallar:**
+- Yeni collection eklendiğinde index tanımı **bu dosyaya** eklenir
+- Servis constructor'larında fire-and-forget index oluşturma **yasaktır**
+- Tüm index'ler idempotent — varsa sessizce atlar
+- Index hatası uygulamayı **durdurmaz** — degraded modda çalışır
+
 ---
 
 ## Swagger Enum Otomasyonu
@@ -185,6 +233,77 @@ Tüm hatalar yapısal JSON yanıta dönüştürülür:
 
 ---
 
+## Health Check
+
+`GET /health` endpoint'i detaylı JSON yanıt döner:
+
+```json
+{
+  "status": "Healthy",
+  "duration": "42ms",
+  "checks": [
+    {
+      "name": "mongodb",
+      "status": "Healthy",
+      "description": "Tüm MongoDB sunucuları erişilebilir.",
+      "data": {
+        "MONGO_52 (Token/Lock)": "OK",
+        "MONGO_206 (Firmalar)": "OK"
+      }
+    },
+    {
+      "name": "iys-api",
+      "status": "Healthy",
+      "description": "IYS API erişilebilir.",
+      "data": {
+        "StatusCode": 401,
+        "BaseAddress": "https://api.iys.org.tr/"
+      }
+    }
+  ]
+}
+```
+
+> ℹ️ IYS API `401` dönmesi **normaldir** — token göndermeden kontrol yapar, erişilebilir olması yeterlidir.
+
+---
+
+## Input Validation
+
+`[IysEnum]` attribute'ü hem Swagger dokümantasyonu hem de **runtime doğrulama** yapar:
+
+```csharp
+// Geçersiz enum değeri → 400 BadRequest (IYS API'ye istek gönderilmeden)
+POST /api/iys/consent/status
+{
+  "recipient": "+905001234567",
+  "recipientType": "GECERSIZ",  // ❌ 400: "'GECERSIZ' geçersiz bir RecipientType değeridir. Kabul edilen değerler: BIREYSEL, TACIR"
+  "type": "MESAJ"
+}
+```
+
+Validasyon kuralları:
+- `[Required]` → Boş/null alanlar 400 döner
+- `[IysEnum(typeof(ConsentType))]` → Geçersiz enum değerleri runtime'da yakalanır
+- Yeni const eklediğinizde validasyon + Swagger **otomatik güncellenir**
+
+---
+
+## Observability
+
+### Correlation ID
+Her istekte `X-Correlation-Id` header'ı otomatik atanır:
+- İstemci header gönderirse → aynı ID korunur
+- Göndermezse → yeni GUID üretilir
+- Response'a otomatik eklenir
+- Tüm log'lara scope olarak bağlanır
+
+### Response Compression
+- Brotli (öncelikli) + Gzip
+- HTTPS dahil tüm JSON yanıtlara uygulanır
+
+---
+
 ## IYS Bilinen Kısıtlar
 
 - Telefon formatı: `+905XXXXXXXXX` (zorunlu)
@@ -201,7 +320,7 @@ Tüm hatalar yapısal JSON yanıta dönüştürülür:
 src/
 ├── IYS.Gateway.Api/
 │   ├── Controllers/          # Consent, Brand, Via controller'ları
-│   ├── Middleware/            # FirmGuid validation, Global error handler
+│   ├── Middleware/            # FirmGuid validation, Global error handler, CorrelationId
 │   └── Swagger/               # FirmGuidHeaderFilter, IysEnumSchemaFilter, IysEnumDescriptionFilter
 ├── IYS.Gateway.Application/
 │   ├── Common/                # IysFirmContext, Interface'ler (IIysTokenManager, IIysFirmResolver, IIysApiClient)
@@ -209,10 +328,13 @@ src/
 │   └── Services/              # Service interface'leri
 ├── IYS.Gateway.Domain/
 │   ├── Constants/             # IysEndpoints
-│   ├── Enums/                 # ConsentType, ConsentSource, RecipientType, ConsentStatus, IysEnumAttribute
+│   ├── Enums/                 # ConsentType, ConsentSource, RecipientType, ConsentStatus, IysEnumAttribute (ValidationAttribute)
 │   └── Exceptions/            # IysApiException, IysTokenExpiredException, IysRateLimitException
 └── IYS.Gateway.Infrastructure/
-    ├── IysApi/                # IysApiClient, IysTokenManager, IysFirmResolver
+    ├── HealthChecks/          # MongoHealthCheck, IysApiHealthCheck
+    ├── IysApi/                # IysApiClient, IysTokenManager, IysFirmResolver, IysDistributedCache
     ├── Mongo/                 # GenericMongoRepository, ConnectionManager, Entity'ler
-    └── Services/              # ConsentService, BrandService, ViaService
+    ├── Services/              # ConsentService, BrandService, ViaService
+    └── Startup/               # MongoIndexInitializer (IHostedService — merkezi index yönetimi)
 ```
+

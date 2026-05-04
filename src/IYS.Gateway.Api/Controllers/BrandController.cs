@@ -13,7 +13,8 @@ public class BrandController : IysBaseController
 {
     private readonly IBrandService _brandService;
 
-    public BrandController(IIysFirmResolver firmResolver, IBrandService brandService) : base(firmResolver)
+    public BrandController(IIysFirmResolver firmResolver, IBrandService brandService, ILogger<BrandController> logger)
+        : base(firmResolver, logger)
     {
         _brandService = brandService;
     }
@@ -21,7 +22,7 @@ public class BrandController : IysBaseController
     /// <summary>Marka listesi sorgulama.</summary>
     /// <remarks>**IYS Remote API:** GET /sps/{iysCode}/brands | **Rate Limit:** Dakikada 100 istek</remarks>
     [HttpGet("brands")]
-    public async Task<IActionResult> GetBrands()
+    public async Task<IActionResult> GetBrands(CancellationToken ct)
     {
         var result = await _brandService.GetBrandsAsync(GetFirmGuid());
         return Ok(result);
@@ -30,7 +31,7 @@ public class BrandController : IysBaseController
     /// <summary>Marka detayı sorgulama.</summary>
     /// <remarks>**IYS Remote API:** GET /sps/{iysCode}/brands/{brandCode} | **Rate Limit:** Dakikada 100 istek</remarks>
     [HttpGet("brands/detail")]
-    public async Task<IActionResult> GetBrandDetail()
+    public async Task<IActionResult> GetBrandDetail(CancellationToken ct)
     {
         var result = await _brandService.GetBrandDetailAsync(GetFirmGuid());
         return Ok(result);
@@ -39,7 +40,7 @@ public class BrandController : IysBaseController
     /// <summary>Bayi listesi sorgulama.</summary>
     /// <remarks>**IYS Remote API:** GET /sps/{iysCode}/brands/{brandCode}/retailers | **Rate Limit:** Dakikada 100 istek</remarks>
     [HttpGet("retailers")]
-    public async Task<IActionResult> GetRetailers()
+    public async Task<IActionResult> GetRetailers(CancellationToken ct)
     {
         var result = await _brandService.GetRetailersAsync(GetFirmGuid());
         return Ok(result);
@@ -48,7 +49,7 @@ public class BrandController : IysBaseController
     /// <summary>Bayi detayı sorgulama.</summary>
     /// <remarks>**IYS Remote API:** GET /sps/{iysCode}/brands/{brandCode}/retailers/{retailerCode} | **Rate Limit:** Dakikada 100 istek</remarks>
     [HttpGet("retailers/{retailerCode:int}")]
-    public async Task<IActionResult> GetRetailerDetail(int retailerCode)
+    public async Task<IActionResult> GetRetailerDetail(int retailerCode, CancellationToken ct)
     {
         var result = await _brandService.GetRetailerDetailAsync(GetFirmGuid(), retailerCode);
         return Ok(result);
@@ -57,7 +58,7 @@ public class BrandController : IysBaseController
     /// <summary>İzin sayısı mutabakat raporu.</summary>
     /// <remarks>**IYS Remote API:** GET /sps/{iysCode}/brands/{brandCode}/consents/count | **Rate Limit:** Dakikada 50 istek</remarks>
     [HttpGet("reconciliation/count")]
-    public async Task<IActionResult> GetConsentCount([FromQuery] string? date)
+    public async Task<IActionResult> GetConsentCount([FromQuery] string? date, CancellationToken ct)
     {
         var queryParams = date != null ? new Dictionary<string, string> { ["date"] = date } : null;
         var result = await _brandService.GetConsentCountAsync(GetFirmGuid(), queryParams);
@@ -67,7 +68,7 @@ public class BrandController : IysBaseController
     /// <summary>IYS iletişim kaynakları listesi.</summary>
     /// <remarks>**IYS Remote API:** GET /sps/sources | **Rate Limit:** Dakikada 100 istek</remarks>
     [HttpGet("sources")]
-    public async Task<IActionResult> GetSources()
+    public async Task<IActionResult> GetSources(CancellationToken ct)
     {
         var result = await _brandService.GetSourcesAsync(GetFirmGuid());
         return Ok(result);
