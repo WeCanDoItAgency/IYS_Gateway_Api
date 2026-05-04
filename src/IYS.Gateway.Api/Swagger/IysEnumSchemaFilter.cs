@@ -42,12 +42,7 @@ public class IysEnumSchemaFilter : ISchemaFilter
 
             if (values.Count == 0) continue;
 
-            // 1. Schema enum olarak ekle (Schema sekmesinde görünür)
-            propSchema.Enum = values
-                .Select(v => (IOpenApiAny)new OpenApiString(v!))
-                .ToList();
-
-            // 2. Description'a kabul edilen değerleri ekle (Example Value görünümünde hemen okunur)
+            // Description'a kabul edilen değerleri ekle (text formatında, dropdown yok)
             var valuesText = string.Join(" | ", values);
             var suffix = $"\n\n**Kabul edilen değerler:** `{valuesText}`";
 
