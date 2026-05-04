@@ -313,6 +313,29 @@ public class ConsentController : IysBaseController
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // 7.5 INTERNAL — İZİN DURUM SENKRONİZASYONU (kendi MongoDB kaydımızı günceller)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Internal izin durum senkronizasyonu. IYS Remote API'ye GİTMEZ.
+    /// Kendi MongoDB IysRequestConsent kaydımızı ve MSSQL BusinessRulesLog (karaliste) tablomuzu günceller.
+    /// Worker GetConsentChanges yanıtındaki her değişiklik kaydı için bu endpoint'i çağırır.
+    /// </summary>
+    /// <remarks>
+    /// **Internal API** — Sadece Orchestrator Worker tarafından çağrılır.
+    /// 
+    /// MongoDB: IysRequestConsent → Status, TransactionId, Source, ConsentDate güncellenir.
+    /// MSSQL: BusinessRulesLog → ONAY ise karaliste kaldırılır, RET ise eklenir/güncellenir.
+    /// </remarks>
+    [HttpPost("internal/consent/sync-status")]
+    public async Task<IActionResult> SyncConsentStatus([FromBody] SyncConsentStatusRequest request, CancellationToken ct)
+    {
+        var firmGuid = GetFirmGuid();
+        await _consentService.SyncConsentStatusAsync(firmGuid, request);
+        return Ok(new { success = true });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // 8. PUSH BİLDİRİM
     // ═══════════════════════════════════════════════════════════════
 

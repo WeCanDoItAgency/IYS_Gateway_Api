@@ -155,6 +155,24 @@ public class ConsentService : IConsentService
         });
     }
 
+    /// <summary>
+    /// Worker'dan gelen tekil izin durum güncelleme isteği.
+    /// MongoDB IysRequestConsent kaydını günceller ve karaliste senkronizasyonu yapar.
+    /// </summary>
+    public async Task SyncConsentStatusAsync(Guid firmGuid, SyncConsentStatusRequest request)
+    {
+        var ctx = await _firmResolver.ResolveAsync(firmGuid);
+
+        await _tracker.UpdateConsentStatusAsync(
+            firmId: ctx.FirmId,
+            recipient: request.Recipient,
+            type: request.Type,
+            status: request.Status,
+            source: request.Source,
+            transactionId: request.TransactionId,
+            consentDate: request.ConsentDate);
+    }
+
     public async Task<object?> RegisterPushAsync(Guid firmGuid, object body)
     {
         return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
