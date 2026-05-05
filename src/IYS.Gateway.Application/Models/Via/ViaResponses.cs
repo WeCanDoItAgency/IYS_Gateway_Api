@@ -93,7 +93,7 @@ public class KvkConsentStatusResponse
     public string? TransactionId { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -109,7 +109,7 @@ public class KvkConsentResponse
     public string? CreationDate { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -121,7 +121,7 @@ public class ViaPassSendResponse
     public string? TransactionId { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -133,7 +133,7 @@ public class ViaPassVerifyResponse
     public bool? Verified { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -148,7 +148,7 @@ public class ViaFrameUrlResponse
     public string? Token { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -166,5 +166,5 @@ public class ViaFrameResultResponse
     public string? TransactionId { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }

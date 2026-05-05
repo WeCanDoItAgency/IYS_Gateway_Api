@@ -146,12 +146,7 @@ public class ConsentService : IConsentService
         return await _firmResolver.ExecuteWithRetryAsync<ConsentChangesResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetConsentChanges, ctx.IysCode, ctx.BrandCode);
-            var result = await _apiClient.GetAsync<ConsentChangesResponse>(ctx, endpoint, queryParams);
-
-            // Consent Changes Tracking — dönen her değişiklik kaydını MongoDB + karaliste ile senkronize et
-            await TrackConsentChangesAsync(ctx, result);
-
-            return result;
+            return await _apiClient.GetAsync<ConsentChangesResponse>(ctx, endpoint, queryParams);
         });
     }
 
@@ -227,11 +222,11 @@ public class ConsentService : IConsentService
             if (!string.IsNullOrEmpty(result.CreationDate))
                 iysCreationDate = Convert.ToDateTime(result.CreationDate);
 
-            // Errors → IysErrorDetail mapping
-            List<IysErrorDetail>? errors = null;
+            // Errors → IysErrorFull mapping
+            List<IysErrorFull>? errors = null;
             if (result.Errors is { Count: > 0 })
             {
-                errors = result.Errors.Select(e => new IysErrorDetail
+                errors = result.Errors.Select(e => new IysErrorFull
                 {
                     Code = e.Code,
                     Message = e.Message,
@@ -280,44 +275,6 @@ public class ConsentService : IConsentService
                     source: result.Source,
                     transactionId: result.TransactionId,
                     consentDate: result.ConsentDate);
-            }
-        }
-        catch
-        {
-            // Tracking hatası ana akışı etkilememeli
-        }
-    }
-
-    /// <summary>
-    /// GetConsentChanges sonrası dönen değişiklik listesini parse edip
-    /// her kayıt için MongoDB tracking + karaliste senkronizasyonu yapar.
-    /// </summary>
-    private async Task TrackConsentChangesAsync(IysFirmContext ctx, ConsentChangesResponse? result)
-    {
-        try
-        {
-            if (result?.List == null || result.List.Count == 0) return;
-
-            foreach (var change in result.List)
-            {
-                try
-                {
-                    if (string.IsNullOrEmpty(change.Recipient) || string.IsNullOrEmpty(change.Type) || string.IsNullOrEmpty(change.Status))
-                        continue;
-
-                    await _tracker.UpdateConsentStatusAsync(
-                        firmId: ctx.FirmId,
-                        recipient: change.Recipient,
-                        type: change.Type,
-                        status: change.Status,
-                        source: change.Source,
-                        transactionId: change.TransactionId,
-                        consentDate: change.ConsentDate);
-                }
-                catch
-                {
-                    // Tek kayıt hatası diğerlerini etkilememeli
-                }
             }
         }
         catch

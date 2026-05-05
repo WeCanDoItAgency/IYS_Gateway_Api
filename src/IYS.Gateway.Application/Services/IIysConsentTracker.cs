@@ -34,7 +34,7 @@ public interface IIysConsentTracker
         string? transactionId,
         string? status,
         DateTime? iysCreationDate = null,
-        List<IysErrorDetail>? errors = null);
+        List<IysErrorFull>? errors = null);
 
     /// <summary>
     /// İzin durum sorgulama sonrası mevcut MongoDB kaydının status'ünü günceller.

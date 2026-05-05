@@ -7,7 +7,7 @@ namespace IYS.Gateway.Application.Models.Common;
 /// OpenAPI: InvalidError — { code, message, location, value }
 /// MongoDB: BsonIgnoreExtraElements ile uyumlu (MongoDB driver JsonPropertyName'leri dikkate almaz).
 /// </summary>
-public class IysErrorDetail
+public class IysErrorFull
 {
     /// <summary>Batch istek içindeki sıra numarası (0-based)</summary>
     [JsonPropertyName("index")]
