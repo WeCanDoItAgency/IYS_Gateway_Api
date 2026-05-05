@@ -90,11 +90,11 @@ var app = builder.Build();
 // [IMPROVEMENT #5] Response Compression — en erken çalışmalı
 app.UseResponseCompression();
 
-if (app.Environment.IsDevelopment())
-{
+// if (app.Environment.IsDevelopment())
+// {
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "IYS Gateway API v1"));
-}
+// }
 
 // [IMPROVEMENT #4] Correlation ID — tüm middleware'lerden önce log scope aç
 app.UseCorrelationId();
