@@ -1,3 +1,4 @@
+using IYS.Gateway.Application.Models.Consent;
 using IYS.Gateway.Infrastructure.Mongo.Entity;
 using MongoDB.Bson.Serialization.Attributes;
 
@@ -8,6 +9,7 @@ namespace IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 /// MONGO_52 / IysRequestConsent collection'ında saklanır.
 /// Hem ekrandan hem API'den gelen tüm izin işlemlerinin durumu bu entity üzerinden izlenir.
 /// </summary>
+[BsonCollection("iysrequestconsentmongo")]
 [BsonIgnoreExtraElements]
 public class IysRequestConsentMongo : MongoDbEntity
 {
@@ -68,16 +70,4 @@ public class IysRequestConsentMongo : MongoDbEntity
 
     /// <summary>TCKN veya Pasaport numarası</summary>
     public string? IdentityNumber { get; set; }
-}
-
-/// <summary>
-/// IYS API hata detay modeli.
-/// </summary>
-public class IysErrorDetail
-{
-    /// <summary>Hata kodu (ör: H121, H120)</summary>
-    public string? Code { get; set; }
-
-    /// <summary>Hata mesajı</summary>
-    public string? Message { get; set; }
 }

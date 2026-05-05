@@ -228,15 +228,15 @@ public class ConsentService : IConsentService
                 iysCreationDate = Convert.ToDateTime(cdStr);
 
             // Errors parse — IYS hata döndüyse kaydet
-            List<object>? errors = null;
+            List<IysErrorDetail>? errors = null;
             if (root.TryGetProperty("errors", out var errProp) && errProp.ValueKind == JsonValueKind.Array)
             {
-                errors = new List<object>();
+                errors = new List<IysErrorDetail>();
                 foreach (var err in errProp.EnumerateArray())
                 {
                     var code = err.TryGetProperty("code", out var c) ? c.GetString() : null;
                     var message = err.TryGetProperty("message", out var m) ? m.GetString() : null;
-                    errors.Add(new { Code = code, Message = message });
+                    errors.Add(new IysErrorDetail { Code = code, Message = message });
                 }
             }
 

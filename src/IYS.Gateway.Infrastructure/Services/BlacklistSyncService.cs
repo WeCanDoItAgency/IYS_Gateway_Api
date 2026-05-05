@@ -18,7 +18,6 @@ namespace IYS.Gateway.Infrastructure.Services;
 /// </summary>
 public class BlacklistSyncService : IBlacklistSyncService
 {
-    private readonly Acente365DbContext _db;
     private readonly ILogger<BlacklistSyncService> _logger;
     private readonly BlacklistSyncConfig _config;
 
@@ -38,11 +37,9 @@ public class BlacklistSyncService : IBlacklistSyncService
     private const string StatusReject = "RET";
 
     public BlacklistSyncService(
-        Acente365DbContext db,
         ILogger<BlacklistSyncService> logger,
         IOptions<BlacklistSyncConfig> config)
     {
-        _db = db;
         _logger = logger;
         _config = config.Value;
     }
@@ -60,29 +57,30 @@ public class BlacklistSyncService : IBlacklistSyncService
 
         try
         {
+            using var db = new ACENTE365Context();
             var phone = ExtractPhone(recipient);
 
             // Manuel karaliste kontrolü — CreatedUserId > 0 olan kayıtlara DOKUNMA
-            if (await HasManualBlacklistAsync(consentType, phone, recipient, firmId))
+            if (await HasManualBlacklistAsync(db, consentType, phone, recipient, firmId))
             {
                 _logger.LogDebug("Manuel karaliste mevcut — IYS sync atlandı. FirmId={FirmId}, Recipient={Recipient}", firmId, recipient);
                 return true;
             }
 
             // Sistem kayıtları sorgusu (CreatedUserId <= 0)
-            var systemRecordsQuery = _db.BusinessRulesLog
+            var systemRecordsQuery = db.BusinessRulesLog
                 .Where(x => x.IsActive == true && x.FirmId == firmId && x.CreatedUserId <= 0);
 
             if (status == StatusApprove)
             {
-                await HandleApproveAsync(consentType, phone, recipient, firmId, systemRecordsQuery);
+                await HandleApproveAsync(db, consentType, phone, recipient, firmId, systemRecordsQuery);
             }
             else if (status == StatusReject)
             {
-                await HandleRejectAsync(consentType, phone, recipient, firmId, systemRecordsQuery);
+                await HandleRejectAsync(db, consentType, phone, recipient, firmId, systemRecordsQuery);
             }
 
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
 
             _logger.LogInformation(
                 "Karaliste senkronizasyonu tamamlandı: FirmId={FirmId}, Status={Status}, Type={Type}, Recipient={Recipient}",
@@ -102,7 +100,7 @@ public class BlacklistSyncService : IBlacklistSyncService
     /// <summary>
     /// ONAY durumu: Aktif karalisteyi kapat, beyazliste ekle.
     /// </summary>
-    private async Task HandleApproveAsync(string consentType, string phone, string recipient, int firmId, IQueryable<Data.Entities.BusinessRulesLog> systemQuery)
+    private async Task HandleApproveAsync(ACENTE365Context db, string consentType, string phone, string recipient, int firmId, IQueryable<BusinessRulesLog> systemQuery)
     {
         if (consentType is "ARAMA" or "MESAJ")
         {
@@ -120,7 +118,7 @@ public class BlacklistSyncService : IBlacklistSyncService
 
             if (activeBlacklist.Count > 0)
             {
-                _db.BusinessRulesLog.Add(CreateWhitelistEntry(phone: phone, firmId: firmId));
+                db.BusinessRulesLog.Add(CreateWhitelistEntry(phone: phone, firmId: firmId));
             }
         }
         else if (consentType == "EPOSTA")
@@ -139,7 +137,7 @@ public class BlacklistSyncService : IBlacklistSyncService
 
             if (activeBlacklist.Count > 0)
             {
-                _db.BusinessRulesLog.Add(CreateWhitelistEntry(email: recipient, firmId: firmId));
+                db.BusinessRulesLog.Add(CreateWhitelistEntry(email: recipient, firmId: firmId));
             }
         }
     }
@@ -147,7 +145,7 @@ public class BlacklistSyncService : IBlacklistSyncService
     /// <summary>
     /// RET durumu: Aktif beyazlisteyi kapat, karaliste ekle (yoksa).
     /// </summary>
-    private async Task HandleRejectAsync(string consentType, string phone, string recipient, int firmId, IQueryable<Data.Entities.BusinessRulesLog> systemQuery)
+    private async Task HandleRejectAsync(ACENTE365Context db, string consentType, string phone, string recipient, int firmId, IQueryable<BusinessRulesLog> systemQuery)
     {
         if (consentType is "ARAMA" or "MESAJ")
         {
@@ -168,7 +166,7 @@ public class BlacklistSyncService : IBlacklistSyncService
 
             if (existingBlacklist == null)
             {
-                _db.BusinessRulesLog.Add(CreateBlacklistEntry(phone: phone, firmId: firmId));
+                db.BusinessRulesLog.Add(CreateBlacklistEntry(phone: phone, firmId: firmId));
             }
         }
         else if (consentType == "EPOSTA")
@@ -190,7 +188,7 @@ public class BlacklistSyncService : IBlacklistSyncService
 
             if (existingBlacklist == null)
             {
-                _db.BusinessRulesLog.Add(CreateBlacklistEntry(email: recipient, firmId: firmId));
+                db.BusinessRulesLog.Add(CreateBlacklistEntry(email: recipient, firmId: firmId));
             }
         }
     }
@@ -198,11 +196,11 @@ public class BlacklistSyncService : IBlacklistSyncService
     /// <summary>
     /// Manuel karaliste kontrolü — CreatedUserId > 0 olan kayıtlar IYS tarafından override edilmez.
     /// </summary>
-    private async Task<bool> HasManualBlacklistAsync(string consentType, string phone, string recipient, int firmId)
+    private async Task<bool> HasManualBlacklistAsync(ACENTE365Context db, string consentType, string phone, string recipient, int firmId)
     {
         if (consentType is "ARAMA" or "MESAJ")
         {
-            return await _db.BusinessRulesLog.AsNoTracking().AnyAsync(x =>
+            return await db.BusinessRulesLog.AsNoTracking().AnyAsync(x =>
                 x.FirmId == firmId &&
                 x.CreatedUserId > 0 &&
                 x.IsActive == true &&
@@ -213,7 +211,7 @@ public class BlacklistSyncService : IBlacklistSyncService
 
         if (consentType == "EPOSTA")
         {
-            return await _db.BusinessRulesLog.AsNoTracking().AnyAsync(x =>
+            return await db.BusinessRulesLog.AsNoTracking().AnyAsync(x =>
                 x.FirmId == firmId &&
                 x.CreatedUserId > 0 &&
                 x.IsActive == true &&
@@ -231,9 +229,9 @@ public class BlacklistSyncService : IBlacklistSyncService
         return recipient.StartsWith("+90") ? recipient[3..] : recipient;
     }
 
-    private static Data.Entities.BusinessRulesLog CreateBlacklistEntry(string? phone = null, string? email = null, int firmId = 0)
+    private static BusinessRulesLog CreateBlacklistEntry(string? phone = null, string? email = null, int firmId = 0)
     {
-        return new Data.Entities.BusinessRulesLog
+        return new BusinessRulesLog
         {
             PhoneNumber = phone,
             Email = email,
@@ -246,9 +244,9 @@ public class BlacklistSyncService : IBlacklistSyncService
         };
     }
 
-    private static Data.Entities.BusinessRulesLog CreateWhitelistEntry(string? phone = null, string? email = null, int firmId = 0)
+    private static BusinessRulesLog CreateWhitelistEntry(string? phone = null, string? email = null, int firmId = 0)
     {
-        return new Data.Entities.BusinessRulesLog
+        return new BusinessRulesLog
         {
             PhoneNumber = phone,
             Email = email,
