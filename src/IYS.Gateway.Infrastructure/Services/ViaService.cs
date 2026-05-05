@@ -1,4 +1,5 @@
 using IYS.Gateway.Application.Common;
+using IYS.Gateway.Application.Models.Via;
 using IYS.Gateway.Application.Services;
 using IYS.Gateway.Domain.Constants;
 using IYS.Gateway.Infrastructure.IysApi;
@@ -26,17 +27,17 @@ public class ViaService : IViaService
         _cache = cache;
     }
 
-    public async Task<object?> GetViaSubscriptionsAsync(Guid firmGuid)
+    public async Task<List<ViaSubscriptionItem>?> GetViaSubscriptionsAsync(Guid firmGuid)
     {
         var firmGuidStr = firmGuid.ToString();
 
-        var cached = await _cache.GetAsync<object>(firmGuidStr, "via_subscriptions");
+        var cached = await _cache.GetAsync<List<ViaSubscriptionItem>>(firmGuidStr, "via_subscriptions");
         if (cached != null) return cached;
 
-        var result = await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        var result = await _firmResolver.ExecuteWithRetryAsync<List<ViaSubscriptionItem>>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetViaSubscriptions, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.GetAsync<object>(ctx, endpoint);
+            return await _apiClient.GetAsync<List<ViaSubscriptionItem>>(ctx, endpoint);
         });
 
         if (result != null)
@@ -45,66 +46,66 @@ public class ViaService : IViaService
         return result;
     }
 
-    public async Task<object?> GetViaSubscriptionDetailAsync(Guid firmGuid, string subscriptionCode)
+    public async Task<ViaSubscriptionItem?> GetViaSubscriptionDetailAsync(Guid firmGuid, string subscriptionCode)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ViaSubscriptionItem>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetViaSubscriptionDetail, ctx.IysCode, ctx.BrandCode, subscriptionCode);
-            return await _apiClient.GetAsync<object>(ctx, endpoint);
+            return await _apiClient.GetAsync<ViaSubscriptionItem>(ctx, endpoint);
         });
     }
 
-    public async Task<object?> GetKvkConsentStatusAsync(Guid firmGuid, object body)
+    public async Task<KvkConsentStatusResponse?> GetKvkConsentStatusAsync(Guid firmGuid, GetKvkConsentStatusRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<KvkConsentStatusResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetKvkConsentStatus, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<GetKvkConsentStatusRequest, KvkConsentStatusResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> AddKvkConsentAsync(Guid firmGuid, object body)
+    public async Task<KvkConsentResponse?> AddKvkConsentAsync(Guid firmGuid, AddKvkConsentRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<KvkConsentResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.AddKvkConsent, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<AddKvkConsentRequest, KvkConsentResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> SendViaPassAsync(Guid firmGuid, object body)
+    public async Task<ViaPassSendResponse?> SendViaPassAsync(Guid firmGuid, SendViaPassRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ViaPassSendResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.ViaPassSend, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<SendViaPassRequest, ViaPassSendResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> VerifyViaPassAsync(Guid firmGuid, object body)
+    public async Task<ViaPassVerifyResponse?> VerifyViaPassAsync(Guid firmGuid, VerifyViaPassRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ViaPassVerifyResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.ViaPassVerify, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<VerifyViaPassRequest, ViaPassVerifyResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> GenerateViaFrameUrlAsync(Guid firmGuid, object body)
+    public async Task<ViaFrameUrlResponse?> GenerateViaFrameUrlAsync(Guid firmGuid, GenerateViaFrameUrlRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ViaFrameUrlResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.ViaFrameUrl, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<GenerateViaFrameUrlRequest, ViaFrameUrlResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> GetViaFrameResultAsync(Guid firmGuid, string token)
+    public async Task<ViaFrameResultResponse?> GetViaFrameResultAsync(Guid firmGuid, string token)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ViaFrameResultResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.ViaFrameResult, ctx.IysCode, ctx.BrandCode, token);
-            return await _apiClient.GetAsync<object>(ctx, endpoint);
+            return await _apiClient.GetAsync<ViaFrameResultResponse>(ctx, endpoint);
         });
     }
 }

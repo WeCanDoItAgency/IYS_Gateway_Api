@@ -1,5 +1,6 @@
 using IYS.Gateway.Application.Common;
 using IYS.Gateway.Application.Models.Consent;
+using IYS.Gateway.Application.Models.Common;
 using IYS.Gateway.Application.Services;
 using Microsoft.AspNetCore.Mvc;
 

@@ -1,4 +1,4 @@
-using IYS.Gateway.Application.Models.Consent;
+using IYS.Gateway.Application.Models.Common;
 using IYS.Gateway.Infrastructure.Mongo.Entity;
 using MongoDB.Bson.Serialization.Attributes;
 
