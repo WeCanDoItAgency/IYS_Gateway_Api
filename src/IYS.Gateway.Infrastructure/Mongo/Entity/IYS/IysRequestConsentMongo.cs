@@ -2,7 +2,7 @@ using IYS.Gateway.Application.Models.Consent;
 using IYS.Gateway.Infrastructure.Mongo.Entity;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
+namespace IYS.Gateway.Infrastructure.Mongo.Entity.IYS;
 
 /// <summary>
 /// IYS izin takip kaydı. Her bir alıcı + firma + izin tipi için MongoDB'de tutulan merkezi kayıt.
