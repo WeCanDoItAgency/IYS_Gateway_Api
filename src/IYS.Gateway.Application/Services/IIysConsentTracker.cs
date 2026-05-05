@@ -1,4 +1,5 @@
 using IYS.Gateway.Application.Models.Consent;
+using IYS.Gateway.Application.Models.Common;
 
 namespace IYS.Gateway.Application.Services;
 

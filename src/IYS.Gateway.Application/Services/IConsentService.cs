@@ -1,55 +1,57 @@
 using IYS.Gateway.Application.Models.Consent;
+using IYS.Gateway.Application.Models.Common;
 
 namespace IYS.Gateway.Application.Services;
 
 /// <summary>
 /// İzin yönetimi servis arayüzü.
 /// Tekil/toplu izin ekleme, durum sorgulama, geçmiş, değişiklikler ve push bildirim işlemleri.
+/// Tüm metotlar typed request/response modelleri kullanır — object ve dynamic YASAKTIR.
 /// </summary>
 public interface IConsentService
 {
     /// <summary>Tekil izin ekleme. Rate Limit: 50/dk</summary>
-    Task<object?> AddSingleConsentAsync(Guid firmGuid, object body);
+    Task<ConsentResponse?> AddSingleConsentAsync(Guid firmGuid, AddSingleConsentRequest request);
 
     /// <summary>Tekil izin ekleme (v2). Rate Limit: 50/dk</summary>
-    Task<object?> AddSingleConsentV2Async(Guid firmGuid, object body);
+    Task<ConsentResponse?> AddSingleConsentV2Async(Guid firmGuid, AddSingleConsentRequest request);
 
     /// <summary>Toplu izin ekleme. Max 10.000 kayıt. Rate Limit: 2/dk</summary>
-    Task<object?> AddBatchConsentAsync(Guid firmGuid, object body);
+    Task<BatchConsentResponse?> AddBatchConsentAsync(Guid firmGuid, AddBatchConsentRequest request);
 
     /// <summary>Toplu izin ekleme (v2). Rate Limit: 2/dk</summary>
-    Task<object?> AddBatchConsentV2Async(Guid firmGuid, object body);
+    Task<BatchConsentResponse?> AddBatchConsentV2Async(Guid firmGuid, AddBatchConsentRequest request);
 
     /// <summary>Toplu izin sonuç sorgulama. Rate Limit: 20/dk</summary>
-    Task<object?> GetBatchConsentStatusAsync(Guid firmGuid, string requestId);
+    Task<List<BatchConsentStatusItem>?> GetBatchConsentStatusAsync(Guid firmGuid, string requestId);
 
     /// <summary>Toplu izin sonuç sorgulama (v2). Rate Limit: 20/dk</summary>
-    Task<object?> GetBatchConsentStatusV2Async(Guid firmGuid, string requestId);
+    Task<List<BatchConsentStatusItem>?> GetBatchConsentStatusV2Async(Guid firmGuid, string requestId);
 
     /// <summary>Tekil izin durum sorgulama. Rate Limit: 100/dk</summary>
-    Task<object?> GetSingleConsentStatusAsync(Guid firmGuid, object body);
+    Task<ConsentStatusResponse?> GetSingleConsentStatusAsync(Guid firmGuid, GetConsentStatusRequest request);
 
     /// <summary>Çoklu izin durum sorgulama. Max 1.000 alıcı. Rate Limit: 10/dk</summary>
-    Task<object?> GetMultipleConsentStatusAsync(Guid firmGuid, string recipientType, string type, object body);
+    Task<MultipleConsentStatusResponse?> GetMultipleConsentStatusAsync(Guid firmGuid, string recipientType, string type, GetMultipleConsentStatusRequest request);
 
     /// <summary>İzin geçmişi sorgulama. Rate Limit: 100/dk</summary>
-    Task<object?> GetConsentHistoryAsync(Guid firmGuid, object body);
+    Task<ConsentHistoryResponse?> GetConsentHistoryAsync(Guid firmGuid, GetConsentHistoryRequest request);
 
     /// <summary>İzin değişiklikleri. Rate Limit: 50/dk</summary>
-    Task<object?> GetConsentChangesAsync(Guid firmGuid, Dictionary<string, string>? queryParams);
+    Task<ConsentChangesResponse?> GetConsentChangesAsync(Guid firmGuid, Dictionary<string, string>? queryParams);
 
     /// <summary>Günlük değişiklik dosyası. Rate Limit: 5/dk</summary>
-    Task<object?> GetDailyChangeFileAsync(Guid firmGuid, string reportDate);
+    Task<ConsentChangesResponse?> GetDailyChangeFileAsync(Guid firmGuid, string reportDate);
 
     /// <summary>Tekil izin durum senkronizasyonu. Worker'dan çağrılır — MongoDB upsert + karaliste sync.</summary>
     Task SyncConsentStatusAsync(Guid firmGuid, SyncConsentStatusRequest request);
 
     /// <summary>Push bildirim kaydı. Rate Limit: 5/dk</summary>
-    Task<object?> RegisterPushAsync(Guid firmGuid, object body);
+    Task<IysErrorResponse?> RegisterPushAsync(Guid firmGuid, RegisterPushRequest request);
 
     /// <summary>Push bildirim durumu. Rate Limit: 5/dk</summary>
-    Task<object?> GetPushStatusAsync(Guid firmGuid);
+    Task<IysErrorResponse?> GetPushStatusAsync(Guid firmGuid);
 
     /// <summary>Push bildirim silme. Rate Limit: 5/dk</summary>
-    Task<object?> UnregisterPushAsync(Guid firmGuid, object body);
+    Task<IysErrorResponse?> UnregisterPushAsync(Guid firmGuid, UnregisterPushRequest request);
 }

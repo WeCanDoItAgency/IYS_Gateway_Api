@@ -1,6 +1,6 @@
-using System.Text.Json;
 using IYS.Gateway.Application.Common;
 using IYS.Gateway.Application.Models.Consent;
+using IYS.Gateway.Application.Models.Common;
 using IYS.Gateway.Application.Services;
 using IYS.Gateway.Domain.Constants;
 using IYS.Gateway.Infrastructure.IysApi;
@@ -34,119 +34,119 @@ public class ConsentService : IConsentService
         _tracker = tracker;
     }
 
-    public async Task<object?> AddSingleConsentAsync(Guid firmGuid, object body)
+    public async Task<ConsentResponse?> AddSingleConsentAsync(Guid firmGuid, AddSingleConsentRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ConsentResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.AddSingleConsent, ctx.IysCode, ctx.BrandCode);
-            var result = await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            var result = await _apiClient.PostAsync<AddSingleConsentRequest, ConsentResponse>(ctx, endpoint, request);
 
             // Consent Tracking — MongoDB'ye kaydet + karaliste senkronizasyonu
-            await TrackAddConsentResultAsync(ctx, body, result);
+            await TrackAddConsentResultAsync(ctx, request, result);
 
             return result;
         });
     }
 
-    public async Task<object?> AddSingleConsentV2Async(Guid firmGuid, object body)
+    public async Task<ConsentResponse?> AddSingleConsentV2Async(Guid firmGuid, AddSingleConsentRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ConsentResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.AddSingleConsentV2, ctx.IysCode, ctx.BrandCode);
-            var result = await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            var result = await _apiClient.PostAsync<AddSingleConsentRequest, ConsentResponse>(ctx, endpoint, request);
 
             // Consent Tracking — MongoDB'ye kaydet + karaliste senkronizasyonu
-            await TrackAddConsentResultAsync(ctx, body, result);
+            await TrackAddConsentResultAsync(ctx, request, result);
 
             return result;
         });
     }
 
-    public async Task<object?> AddBatchConsentAsync(Guid firmGuid, object body)
+    public async Task<BatchConsentResponse?> AddBatchConsentAsync(Guid firmGuid, AddBatchConsentRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<BatchConsentResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.AddBatchConsent, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<AddBatchConsentRequest, BatchConsentResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> AddBatchConsentV2Async(Guid firmGuid, object body)
+    public async Task<BatchConsentResponse?> AddBatchConsentV2Async(Guid firmGuid, AddBatchConsentRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<BatchConsentResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.AddBatchConsentV2, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<AddBatchConsentRequest, BatchConsentResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> GetBatchConsentStatusAsync(Guid firmGuid, string requestId)
+    public async Task<List<BatchConsentStatusItem>?> GetBatchConsentStatusAsync(Guid firmGuid, string requestId)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<List<BatchConsentStatusItem>>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetBatchConsentStatus, ctx.IysCode, ctx.BrandCode, requestId);
-            return await _apiClient.GetAsync<object>(ctx, endpoint);
+            return await _apiClient.GetAsync<List<BatchConsentStatusItem>>(ctx, endpoint);
         });
     }
 
-    public async Task<object?> GetBatchConsentStatusV2Async(Guid firmGuid, string requestId)
+    public async Task<List<BatchConsentStatusItem>?> GetBatchConsentStatusV2Async(Guid firmGuid, string requestId)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<List<BatchConsentStatusItem>>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetBatchConsentStatusV2, ctx.IysCode, ctx.BrandCode, requestId);
-            return await _apiClient.GetAsync<object>(ctx, endpoint);
+            return await _apiClient.GetAsync<List<BatchConsentStatusItem>>(ctx, endpoint);
         });
     }
 
-    public async Task<object?> GetSingleConsentStatusAsync(Guid firmGuid, object body)
+    public async Task<ConsentStatusResponse?> GetSingleConsentStatusAsync(Guid firmGuid, GetConsentStatusRequest request)
     {
         var firmGuidStr = firmGuid.ToString();
 
         // Cache kontrolü — aynı firma + aynı parametreler için 30sn cache
-        var cached = await _cache.GetAsync<object>(firmGuidStr, "consent_status", body);
+        var cached = await _cache.GetAsync<ConsentStatusResponse>(firmGuidStr, "consent_status", request);
         if (cached != null) return cached;
 
-        var result = await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        var result = await _firmResolver.ExecuteWithRetryAsync<ConsentStatusResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetSingleConsentStatus, ctx.IysCode, ctx.BrandCode);
-            var apiResult = await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            var apiResult = await _apiClient.PostAsync<GetConsentStatusRequest, ConsentStatusResponse>(ctx, endpoint, request);
 
             // Consent Status Tracking — MongoDB'de mevcut kaydı güncelle + karaliste senkronizasyonu
-            await TrackStatusQueryResultAsync(ctx, body, apiResult);
+            await TrackStatusQueryResultAsync(ctx, request, apiResult);
 
             return apiResult;
         });
 
         if (result != null)
-            await _cache.SetAsync(firmGuidStr, "consent_status", result, ConsentStatusCacheTtlSeconds, body);
+            await _cache.SetAsync(firmGuidStr, "consent_status", result, ConsentStatusCacheTtlSeconds, request);
 
         return result;
     }
 
-    public async Task<object?> GetMultipleConsentStatusAsync(Guid firmGuid, string recipientType, string type, object body)
+    public async Task<MultipleConsentStatusResponse?> GetMultipleConsentStatusAsync(Guid firmGuid, string recipientType, string type, GetMultipleConsentStatusRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<MultipleConsentStatusResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetMultipleConsentStatus, ctx.IysCode, ctx.BrandCode, recipientType, type);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<GetMultipleConsentStatusRequest, MultipleConsentStatusResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> GetConsentHistoryAsync(Guid firmGuid, object body)
+    public async Task<ConsentHistoryResponse?> GetConsentHistoryAsync(Guid firmGuid, GetConsentHistoryRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ConsentHistoryResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetConsentHistory, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<GetConsentHistoryRequest, ConsentHistoryResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> GetConsentChangesAsync(Guid firmGuid, Dictionary<string, string>? queryParams)
+    public async Task<ConsentChangesResponse?> GetConsentChangesAsync(Guid firmGuid, Dictionary<string, string>? queryParams)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ConsentChangesResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetConsentChanges, ctx.IysCode, ctx.BrandCode);
-            var result = await _apiClient.GetAsync<object>(ctx, endpoint, queryParams);
+            var result = await _apiClient.GetAsync<ConsentChangesResponse>(ctx, endpoint, queryParams);
 
             // Consent Changes Tracking — dönen her değişiklik kaydını MongoDB + karaliste ile senkronize et
             await TrackConsentChangesAsync(ctx, result);
@@ -155,12 +155,12 @@ public class ConsentService : IConsentService
         });
     }
 
-    public async Task<object?> GetDailyChangeFileAsync(Guid firmGuid, string reportDate)
+    public async Task<ConsentChangesResponse?> GetDailyChangeFileAsync(Guid firmGuid, string reportDate)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<ConsentChangesResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.DailyChangeFile, ctx.IysCode, ctx.BrandCode, reportDate);
-            return await _apiClient.GetAsync<object>(ctx, endpoint);
+            return await _apiClient.GetAsync<ConsentChangesResponse>(ctx, endpoint);
         });
     }
 
@@ -182,30 +182,30 @@ public class ConsentService : IConsentService
             consentDate: request.ConsentDate);
     }
 
-    public async Task<object?> RegisterPushAsync(Guid firmGuid, object body)
+    public async Task<IysErrorResponse?> RegisterPushAsync(Guid firmGuid, RegisterPushRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<IysErrorResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.PushRegistration, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<RegisterPushRequest, IysErrorResponse>(ctx, endpoint, request);
         });
     }
 
-    public async Task<object?> GetPushStatusAsync(Guid firmGuid)
+    public async Task<IysErrorResponse?> GetPushStatusAsync(Guid firmGuid)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<IysErrorResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.PushRegistration, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.GetAsync<object>(ctx, endpoint);
+            return await _apiClient.GetAsync<IysErrorResponse>(ctx, endpoint);
         });
     }
 
-    public async Task<object?> UnregisterPushAsync(Guid firmGuid, object body)
+    public async Task<IysErrorResponse?> UnregisterPushAsync(Guid firmGuid, UnregisterPushRequest request)
     {
-        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        return await _firmResolver.ExecuteWithRetryAsync<IysErrorResponse>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.PushUnregistration, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.PostAsync<object, object>(ctx, endpoint, body);
+            return await _apiClient.PostAsync<UnregisterPushRequest, IysErrorResponse>(ctx, endpoint, request);
         });
     }
 
@@ -217,36 +217,28 @@ public class ConsentService : IConsentService
     /// İzin ekleme sonrası IYS API yanıtını parse edip MongoDB tracking kaydı oluşturur.
     /// SADECE başarılı yanıtlarda (transactionId döndüğünde) tracking yapılır.
     /// </summary>
-    private async Task TrackAddConsentResultAsync(IysFirmContext ctx, object body, object? result)
+    private async Task TrackAddConsentResultAsync(IysFirmContext ctx, AddSingleConsentRequest request, ConsentResponse? result)
     {
         try
         {
-            if (body is not AddSingleConsentRequest request) return;
             if (result == null) return;
 
-            var json = JsonSerializer.Serialize(result);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            string? transactionId = null;
-            if (root.TryGetProperty("transactionId", out var tid))
-                transactionId = tid.GetString();
-
             DateTime? iysCreationDate = null;
-            if (root.TryGetProperty("creationDate", out var cd) && cd.GetString() is string cdStr)
-                iysCreationDate = Convert.ToDateTime(cdStr);
+            if (!string.IsNullOrEmpty(result.CreationDate))
+                iysCreationDate = Convert.ToDateTime(result.CreationDate);
 
-            // Errors parse — IYS hata döndüyse kaydet
+            // Errors → IysErrorDetail mapping
             List<IysErrorDetail>? errors = null;
-            if (root.TryGetProperty("errors", out var errProp) && errProp.ValueKind == JsonValueKind.Array)
+            if (result.Errors is { Count: > 0 })
             {
-                errors = new List<IysErrorDetail>();
-                foreach (var err in errProp.EnumerateArray())
+                errors = result.Errors.Select(e => new IysErrorDetail
                 {
-                    var code = err.TryGetProperty("code", out var c) ? c.GetString() : null;
-                    var message = err.TryGetProperty("message", out var m) ? m.GetString() : null;
-                    errors.Add(new IysErrorDetail { Code = code, Message = message });
-                }
+                    Code = e.Code,
+                    Message = e.Message,
+                    Index = e.Index,
+                    Location = e.Location,
+                    Value = e.Value
+                }).ToList();
             }
 
             // Başarılı (transactionId var) → tam upsert
@@ -258,8 +250,8 @@ public class ConsentService : IConsentService
                 recipientType: request.RecipientType,
                 source: request.Source,
                 consentDate: request.ConsentDate,
-                transactionId: transactionId,
-                status: !string.IsNullOrEmpty(transactionId) ? request.Status : null,
+                transactionId: result.TransactionId,
+                status: !string.IsNullOrEmpty(result.TransactionId) ? request.Status : null,
                 iysCreationDate: iysCreationDate,
                 errors: errors);
         }
@@ -272,44 +264,22 @@ public class ConsentService : IConsentService
     /// <summary>
     /// İzin durum sorgulama sonrası IYS API yanıtını parse edip MongoDB kaydını günceller.
     /// </summary>
-    private async Task TrackStatusQueryResultAsync(IysFirmContext ctx, object body, object? result)
+    private async Task TrackStatusQueryResultAsync(IysFirmContext ctx, GetConsentStatusRequest request, ConsentStatusResponse? result)
     {
         try
         {
-            if (body is not GetConsentStatusRequest request) return;
             if (result == null) return;
 
-            var json = JsonSerializer.Serialize(result);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            string? status = null;
-            string? source = null;
-            string? transactionId = null;
-            string? consentDate = null;
-
-            if (root.TryGetProperty("status", out var s))
-                status = s.GetString();
-
-            if (root.TryGetProperty("source", out var src))
-                source = src.GetString();
-
-            if (root.TryGetProperty("transactionId", out var tid))
-                transactionId = tid.GetString();
-
-            if (root.TryGetProperty("consentDate", out var cd))
-                consentDate = cd.GetString();
-
-            if (!string.IsNullOrEmpty(status))
+            if (!string.IsNullOrEmpty(result.Status))
             {
                 await _tracker.UpdateConsentStatusAsync(
                     firmId: ctx.FirmId,
                     recipient: request.Recipient,
                     type: request.Type,
-                    status: status,
-                    source: source,
-                    transactionId: transactionId,
-                    consentDate: consentDate);
+                    status: result.Status,
+                    source: result.Source,
+                    transactionId: result.TransactionId,
+                    consentDate: result.ConsentDate);
             }
         }
         catch
@@ -321,55 +291,28 @@ public class ConsentService : IConsentService
     /// <summary>
     /// GetConsentChanges sonrası dönen değişiklik listesini parse edip
     /// her kayıt için MongoDB tracking + karaliste senkronizasyonu yapar.
-    /// IYS Changes API response formatı: { "list": [ { recipient, type, status, source, consentDate, transactionId, ... } ] }
     /// </summary>
-    private async Task TrackConsentChangesAsync(IysFirmContext ctx, object? result)
+    private async Task TrackConsentChangesAsync(IysFirmContext ctx, ConsentChangesResponse? result)
     {
         try
         {
-            if (result == null) return;
+            if (result?.List == null || result.List.Count == 0) return;
 
-            var json = JsonSerializer.Serialize(result);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            // IYS changes response formatı: obje dizisi veya { "list": [...] }
-            JsonElement items;
-            if (root.ValueKind == JsonValueKind.Array)
-            {
-                items = root;
-            }
-            else if (root.TryGetProperty("list", out var listProp) && listProp.ValueKind == JsonValueKind.Array)
-            {
-                items = listProp;
-            }
-            else
-            {
-                return;
-            }
-
-            foreach (var item in items.EnumerateArray())
+            foreach (var change in result.List)
             {
                 try
                 {
-                    var recipient = item.TryGetProperty("recipient", out var r) ? r.GetString() : null;
-                    var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
-                    var status = item.TryGetProperty("status", out var st) ? st.GetString() : null;
-                    var source = item.TryGetProperty("source", out var src) ? src.GetString() : null;
-                    var transactionId = item.TryGetProperty("transactionId", out var tid) ? tid.GetString() : null;
-                    var consentDate = item.TryGetProperty("consentDate", out var cd) ? cd.GetString() : null;
-
-                    if (string.IsNullOrEmpty(recipient) || string.IsNullOrEmpty(type) || string.IsNullOrEmpty(status))
+                    if (string.IsNullOrEmpty(change.Recipient) || string.IsNullOrEmpty(change.Type) || string.IsNullOrEmpty(change.Status))
                         continue;
 
                     await _tracker.UpdateConsentStatusAsync(
                         firmId: ctx.FirmId,
-                        recipient: recipient,
-                        type: type,
-                        status: status,
-                        source: source,
-                        transactionId: transactionId,
-                        consentDate: consentDate);
+                        recipient: change.Recipient,
+                        type: change.Type,
+                        status: change.Status,
+                        source: change.Source,
+                        transactionId: change.TransactionId,
+                        consentDate: change.ConsentDate);
                 }
                 catch
                 {
