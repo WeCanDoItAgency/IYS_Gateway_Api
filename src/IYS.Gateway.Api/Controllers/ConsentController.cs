@@ -313,6 +313,29 @@ public class ConsentController : IysBaseController
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // 7.1 GÜNLÜK DEĞİŞİKLİK DOSYASI
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Günlük izin değişiklik dosyası. Belirli bir tarihe ait tüm izin değişikliklerini döner.
+    /// </summary>
+    /// <remarks>
+    /// **IYS Remote API:** GET /sps/{iysCode}/brands/{brandCode}/changes/{reportDate}/file
+    /// 
+    /// **Rate Limit:** Dakikada 5 istek
+    /// </remarks>
+    /// <param name="reportDate">Rapor tarihi (yyyy-MM-dd formatında)</param>
+    /// <param name="ct">İptal token'ı</param>
+    [HttpGet("consent/changes/daily-file/{reportDate}")]
+    public async Task<IActionResult> GetDailyChangeFile(string reportDate, CancellationToken ct)
+    {
+        var firmGuid = GetFirmGuid();
+        var result = await _consentService.GetDailyChangeFileAsync(firmGuid, reportDate);
+        if (result == null) return NoContent();
+        return Ok(result);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // 7.5 INTERNAL — İZİN DURUM SENKRONİZASYONU (kendi MongoDB kaydımızı günceller)
     // ═══════════════════════════════════════════════════════════════
 

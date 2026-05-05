@@ -38,6 +38,9 @@ public interface IConsentService
     /// <summary>İzin değişiklikleri. Rate Limit: 50/dk</summary>
     Task<object?> GetConsentChangesAsync(Guid firmGuid, Dictionary<string, string>? queryParams);
 
+    /// <summary>Günlük değişiklik dosyası. Rate Limit: 5/dk</summary>
+    Task<object?> GetDailyChangeFileAsync(Guid firmGuid, string reportDate);
+
     /// <summary>Tekil izin durum senkronizasyonu. Worker'dan çağrılır — MongoDB upsert + karaliste sync.</summary>
     Task SyncConsentStatusAsync(Guid firmGuid, SyncConsentStatusRequest request);
 

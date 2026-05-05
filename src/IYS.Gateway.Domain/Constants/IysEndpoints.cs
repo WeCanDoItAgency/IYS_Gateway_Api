@@ -159,9 +159,10 @@ public static class IysEndpoints
 
     /// <summary>
     /// Günlük değişiklik dosyası. Belirli bir tarihe ait izin değişikliklerini dosya olarak indirir.
+    /// Path: /sps/{iysCode}/brands/{brandCode}/changes/{reportDate}/file
     /// Rate Limit: Dakikada 5 istek
     /// </summary>
-    public const string DailyChangeFile = "/sps/{0}/brands/{1}/consents/changes/daily-file";
+    public const string DailyChangeFile = "/sps/{0}/brands/{1}/changes/{2}/file";
 
     // ─── ABONELİK YÖNETİMİ ─────────────────────────────────────
     /// <summary>

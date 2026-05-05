@@ -155,6 +155,15 @@ public class ConsentService : IConsentService
         });
     }
 
+    public async Task<object?> GetDailyChangeFileAsync(Guid firmGuid, string reportDate)
+    {
+        return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
+        {
+            var endpoint = string.Format(IysEndpoints.DailyChangeFile, ctx.IysCode, ctx.BrandCode, reportDate);
+            return await _apiClient.GetAsync<object>(ctx, endpoint);
+        });
+    }
+
     /// <summary>
     /// Worker'dan gelen tekil izin durum güncelleme isteği.
     /// MongoDB IysRequestConsent kaydını günceller ve karaliste senkronizasyonu yapar.
