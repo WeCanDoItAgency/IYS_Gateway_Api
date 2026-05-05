@@ -146,7 +146,12 @@ public class ConsentService : IConsentService
         return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
         {
             var endpoint = string.Format(IysEndpoints.GetConsentChanges, ctx.IysCode, ctx.BrandCode);
-            return await _apiClient.GetAsync<object>(ctx, endpoint, queryParams);
+            var result = await _apiClient.GetAsync<object>(ctx, endpoint, queryParams);
+
+            // Consent Changes Tracking — dönen her değişiklik kaydını MongoDB + karaliste ile senkronize et
+            await TrackConsentChangesAsync(ctx, result);
+
+            return result;
         });
     }
 
@@ -196,16 +201,29 @@ public class ConsentService : IConsentService
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // TransactionId yoksa başarısız — tracking yapma
-            if (!root.TryGetProperty("transactionId", out var tid) || string.IsNullOrEmpty(tid.GetString()))
-                return;
-
-            var transactionId = tid.GetString();
+            string? transactionId = null;
+            if (root.TryGetProperty("transactionId", out var tid))
+                transactionId = tid.GetString();
 
             DateTime? iysCreationDate = null;
             if (root.TryGetProperty("creationDate", out var cd) && cd.GetString() is string cdStr)
                 iysCreationDate = Convert.ToDateTime(cdStr);
 
+            // Errors parse — IYS hata döndüyse kaydet
+            List<object>? errors = null;
+            if (root.TryGetProperty("errors", out var errProp) && errProp.ValueKind == JsonValueKind.Array)
+            {
+                errors = new List<object>();
+                foreach (var err in errProp.EnumerateArray())
+                {
+                    var code = err.TryGetProperty("code", out var c) ? c.GetString() : null;
+                    var message = err.TryGetProperty("message", out var m) ? m.GetString() : null;
+                    errors.Add(new { Code = code, Message = message });
+                }
+            }
+
+            // Başarılı (transactionId var) → tam upsert
+            // Başarısız (transactionId yok, errors var) → sadece errors + lastQueryDate güncelle
             await _tracker.UpsertConsentRecordAsync(
                 firmId: ctx.FirmId,
                 recipient: request.Recipient,
@@ -214,8 +232,9 @@ public class ConsentService : IConsentService
                 source: request.Source,
                 consentDate: request.ConsentDate,
                 transactionId: transactionId,
-                status: request.Status,
-                iysCreationDate: iysCreationDate);
+                status: !string.IsNullOrEmpty(transactionId) ? request.Status : null,
+                iysCreationDate: iysCreationDate,
+                errors: errors);
         }
         catch
         {
@@ -264,6 +283,71 @@ public class ConsentService : IConsentService
                     source: source,
                     transactionId: transactionId,
                     consentDate: consentDate);
+            }
+        }
+        catch
+        {
+            // Tracking hatası ana akışı etkilememeli
+        }
+    }
+
+    /// <summary>
+    /// GetConsentChanges sonrası dönen değişiklik listesini parse edip
+    /// her kayıt için MongoDB tracking + karaliste senkronizasyonu yapar.
+    /// IYS Changes API response formatı: { "list": [ { recipient, type, status, source, consentDate, transactionId, ... } ] }
+    /// </summary>
+    private async Task TrackConsentChangesAsync(IysFirmContext ctx, object? result)
+    {
+        try
+        {
+            if (result == null) return;
+
+            var json = JsonSerializer.Serialize(result);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // IYS changes response formatı: obje dizisi veya { "list": [...] }
+            JsonElement items;
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                items = root;
+            }
+            else if (root.TryGetProperty("list", out var listProp) && listProp.ValueKind == JsonValueKind.Array)
+            {
+                items = listProp;
+            }
+            else
+            {
+                return;
+            }
+
+            foreach (var item in items.EnumerateArray())
+            {
+                try
+                {
+                    var recipient = item.TryGetProperty("recipient", out var r) ? r.GetString() : null;
+                    var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
+                    var status = item.TryGetProperty("status", out var st) ? st.GetString() : null;
+                    var source = item.TryGetProperty("source", out var src) ? src.GetString() : null;
+                    var transactionId = item.TryGetProperty("transactionId", out var tid) ? tid.GetString() : null;
+                    var consentDate = item.TryGetProperty("consentDate", out var cd) ? cd.GetString() : null;
+
+                    if (string.IsNullOrEmpty(recipient) || string.IsNullOrEmpty(type) || string.IsNullOrEmpty(status))
+                        continue;
+
+                    await _tracker.UpdateConsentStatusAsync(
+                        firmId: ctx.FirmId,
+                        recipient: recipient,
+                        type: type,
+                        status: status,
+                        source: source,
+                        transactionId: transactionId,
+                        consentDate: consentDate);
+                }
+                catch
+                {
+                    // Tek kayıt hatası diğerlerini etkilememeli
+                }
             }
         }
         catch
