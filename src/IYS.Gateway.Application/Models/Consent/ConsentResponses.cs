@@ -6,7 +6,7 @@ namespace IYS.Gateway.Application.Models.Consent;
 // ═══════════════════════════════════════════════════════════════
 // IYS API RESPONSE MODELLERİ
 // OpenAPI v1 spec'ten türetilmiştir. object/dynamic YASAKTIR.
-// Hata detayı: IysErrorDetail (Common/ altında tek kaynak)
+// Hata detayı: IysErrorFull (Common/ altında tek kaynak)
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
@@ -15,7 +15,7 @@ namespace IYS.Gateway.Application.Models.Consent;
 public class IysErrorResponse
 {
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -35,7 +35,7 @@ public class ConsentResponse
 
     /// <summary>Hata listesi (başarısız olursa dolar)</summary>
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -54,7 +54,7 @@ public class BatchConsentResponse
     public List<SubRequestItem>? SubRequests { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -137,7 +137,7 @@ public class ConsentStatusResponse
     public int? RetailerAccessCount { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -154,7 +154,7 @@ public class MultipleConsentStatusResponse
     public List<string>? List { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>
@@ -170,7 +170,7 @@ public class ConsentHistoryResponse
     public PaginationInfo? Pagination { get; set; }
 
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 
     public bool IsSuccessfull => Errors == null || Errors.Count == 0;
     public int StatusCode { get; set; }
@@ -274,11 +274,11 @@ public class BatchConsentStatusItem
 
     /// <summary>Hata detayı (tekil, başarısız kayıt için)</summary>
     [JsonPropertyName("error")]
-    public IysErrorDetail? Error { get; set; }
+    public IysErrorFull? Error { get; set; }
 
     /// <summary>Hata listesi</summary>
     [JsonPropertyName("errors")]
-    public List<IysErrorDetail>? Errors { get; set; }
+    public List<IysErrorFull>? Errors { get; set; }
 }
 
 /// <summary>

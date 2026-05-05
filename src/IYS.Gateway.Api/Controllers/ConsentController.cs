@@ -69,6 +69,11 @@ public class ConsentController : IysBaseController
         var firmGuid = GetFirmGuid();
         Logger.LogInformation("Tekil izin ekleme başlatıldı. Firma: {FirmGuid}, Alıcı: {Recipient}", firmGuid, request.Recipient);
         var result = await _consentService.AddSingleConsentAsync(firmGuid, request);
+
+        // IYS iş mantığı hatası → errors dolu, transactionId boş
+        if (result?.Errors is { Count: > 0 } && string.IsNullOrEmpty(result.TransactionId))
+            return UnprocessableEntity(result);
+
         return Ok(result);
     }
 
@@ -90,6 +95,11 @@ public class ConsentController : IysBaseController
         var firmGuid = GetFirmGuid();
         Logger.LogInformation("Tekil izin ekleme (v2) başlatıldı. Firma: {FirmGuid}", firmGuid);
         var result = await _consentService.AddSingleConsentV2Async(firmGuid, request);
+
+        // IYS iş mantığı hatası → errors dolu, transactionId boş
+        if (result?.Errors is { Count: > 0 } && string.IsNullOrEmpty(result.TransactionId))
+            return UnprocessableEntity(result);
+
         return Ok(result);
     }
 

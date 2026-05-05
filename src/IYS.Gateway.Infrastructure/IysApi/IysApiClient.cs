@@ -119,8 +119,24 @@ public class IysApiClient : IIysApiClient
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogError("{FirmLog} IYS API hata: {StatusCode} - {Content}",
+                _logger.LogWarning("{FirmLog} IYS API hata: {StatusCode} - {Content}",
                     firmLog, (int)response.StatusCode, content);
+
+                // IYS iş mantığı hatası (4xx) — response body'yi TResponse olarak deserialize et.
+                // Böylece caller'daki tracking (TrackAddConsentResultAsync) çalışabilir.
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    try
+                    {
+                        var errorResult = JsonSerializer.Deserialize<TResponse>(content, JsonOptions);
+                        if (errorResult != null)
+                            return errorResult;
+                    }
+                    catch (JsonException)
+                    {
+                        // Deserialize edilemezse aşağıda exception fırlatılır
+                    }
+                }
 
                 throw new IysApiException(
                     $"IYS API hatası: {content}",

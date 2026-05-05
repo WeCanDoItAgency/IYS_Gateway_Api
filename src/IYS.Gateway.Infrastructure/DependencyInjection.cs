@@ -48,9 +48,9 @@ public static class DependencyInjection
         // IYS Consent Tracking + Blacklist Sync
         // ══════════════════════════════════════════════════════════
 
-        // Config — SQL kapatılabilirlik toggle
-        services.Configure<BlacklistSyncConfig>(
-            configuration.GetSection(BlacklistSyncConfig.SectionName));
+        // Config — IysSync section'ından okunur (UseSqlDb: SQL toggle)
+        services.Configure<IysSyncConfig>(
+            configuration.GetSection(IysSyncConfig.SectionName));
 
         // Servisler
         services.AddScoped<IBlacklistSyncService, BlacklistSyncService>();
