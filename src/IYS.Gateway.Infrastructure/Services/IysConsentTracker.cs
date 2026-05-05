@@ -1,7 +1,7 @@
 using IYS.Gateway.Application.Common;
 using IYS.Gateway.Application.Models.Consent;
 using IYS.Gateway.Application.Services;
-using IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
+using IYS.Gateway.Infrastructure.Mongo.Entity.IYS;
 using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 using IYS.Gateway.Infrastructure.Mongo.Settings;
 using Microsoft.Extensions.Logging;
