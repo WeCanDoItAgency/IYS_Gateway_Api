@@ -1,0 +1,78 @@
+--- 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iys-gateway-api
+  namespace: acente365-microservice
+spec:
+  selector:
+    matchLabels:
+      app: iys-gateway-api-app
+      version: "1"
+  replicas: 10
+  strategy:
+    rollingUpdate:
+      maxSurge: 50%
+      maxUnavailable: 50%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: iys-gateway-api-app
+        version: "1"
+    spec:
+      containers:
+      - name: iys-gateway-api
+        image: core.harbor.domain:8443/dijipol/iysgatewayapi:${BUILD_ID}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iys-gateway-api-svc
+  namespace: acente365-microservice
+spec:
+  selector:
+    app: iys-gateway-api-app
+  ports:
+  - protocol: TCP
+    name: http
+    port: 80
+    targetPort: 80
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iys-gateway-api-virtualhost
+  namespace: acente365-microservice
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: iys-gateway-api.local
+    http:
+      paths:
+      - backend:
+          service:
+            name: iys-gateway-api-svc
+            port:
+              number: 80
+        path: /
+        pathType: ImplementationSpecific
+  - host: iys-gateway-api-virtualhost.10.1.0.5.nip.io
+    http:
+      paths:
+      - backend:
+          service:
+            name: iys-gateway-api-svc
+            port:
+              number: 80
+        path: /
+        pathType: ImplementationSpecific
