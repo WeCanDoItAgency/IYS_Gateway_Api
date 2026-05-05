@@ -1,3 +1,5 @@
+using IYS.Gateway.Application.Models.Consent;
+
 namespace IYS.Gateway.Application.Services;
 
 /// <summary>
@@ -35,6 +37,9 @@ public interface IConsentService
 
     /// <summary>İzin değişiklikleri. Rate Limit: 50/dk</summary>
     Task<object?> GetConsentChangesAsync(Guid firmGuid, Dictionary<string, string>? queryParams);
+
+    /// <summary>Tekil izin durum senkronizasyonu. Worker'dan çağrılır — MongoDB upsert + karaliste sync.</summary>
+    Task SyncConsentStatusAsync(Guid firmGuid, SyncConsentStatusRequest request);
 
     /// <summary>Push bildirim kaydı. Rate Limit: 5/dk</summary>
     Task<object?> RegisterPushAsync(Guid firmGuid, object body);

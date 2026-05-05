@@ -1,11 +1,9 @@
 using IYS.Gateway.Application.Common;
 using IYS.Gateway.Application.Services;
-using IYS.Gateway.Infrastructure.Data;
 using IYS.Gateway.Infrastructure.HealthChecks;
 using IYS.Gateway.Infrastructure.IysApi;
 using IYS.Gateway.Infrastructure.Services;
 using IYS.Gateway.Infrastructure.Startup;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
@@ -53,16 +51,6 @@ public static class DependencyInjection
         // Config — SQL kapatılabilirlik toggle
         services.Configure<BlacklistSyncConfig>(
             configuration.GetSection(BlacklistSyncConfig.SectionName));
-
-        // MSSQL DbContext — BusinessRulesLog karaliste/beyazliste
-        var sqlConnectionString = configuration.GetConnectionString("Acente365Db")
-            ?? configuration["GlobalAdresses:Acente365SqlConnectionString"];
-        
-        if (!string.IsNullOrEmpty(sqlConnectionString))
-        {
-            services.AddDbContext<Acente365DbContext>(options =>
-                options.UseSqlServer(sqlConnectionString));
-        }
 
         // Servisler
         services.AddScoped<IBlacklistSyncService, BlacklistSyncService>();

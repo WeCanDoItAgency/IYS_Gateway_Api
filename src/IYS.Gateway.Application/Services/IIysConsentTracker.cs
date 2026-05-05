@@ -1,3 +1,5 @@
+using IYS.Gateway.Application.Models.Consent;
+
 namespace IYS.Gateway.Application.Services;
 
 /// <summary>
@@ -31,7 +33,7 @@ public interface IIysConsentTracker
         string? transactionId,
         string? status,
         DateTime? iysCreationDate = null,
-        List<object>? errors = null);
+        List<IysErrorDetail>? errors = null);
 
     /// <summary>
     /// İzin durum sorgulama sonrası mevcut MongoDB kaydının status'ünü günceller.

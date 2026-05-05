@@ -155,6 +155,24 @@ public class ConsentService : IConsentService
         });
     }
 
+    /// <summary>
+    /// Worker'dan gelen tekil izin durum güncelleme isteği.
+    /// MongoDB IysRequestConsent kaydını günceller ve karaliste senkronizasyonu yapar.
+    /// </summary>
+    public async Task SyncConsentStatusAsync(Guid firmGuid, SyncConsentStatusRequest request)
+    {
+        var ctx = await _firmResolver.ResolveAsync(firmGuid);
+
+        await _tracker.UpdateConsentStatusAsync(
+            firmId: ctx.FirmId,
+            recipient: request.Recipient,
+            type: request.Type,
+            status: request.Status,
+            source: request.Source,
+            transactionId: request.TransactionId,
+            consentDate: request.ConsentDate);
+    }
+
     public async Task<object?> RegisterPushAsync(Guid firmGuid, object body)
     {
         return await _firmResolver.ExecuteWithRetryAsync<object>(firmGuid, async ctx =>
@@ -210,15 +228,15 @@ public class ConsentService : IConsentService
                 iysCreationDate = Convert.ToDateTime(cdStr);
 
             // Errors parse — IYS hata döndüyse kaydet
-            List<object>? errors = null;
+            List<IysErrorDetail>? errors = null;
             if (root.TryGetProperty("errors", out var errProp) && errProp.ValueKind == JsonValueKind.Array)
             {
-                errors = new List<object>();
+                errors = new List<IysErrorDetail>();
                 foreach (var err in errProp.EnumerateArray())
                 {
                     var code = err.TryGetProperty("code", out var c) ? c.GetString() : null;
                     var message = err.TryGetProperty("message", out var m) ? m.GetString() : null;
-                    errors.Add(new { Code = code, Message = message });
+                    errors.Add(new IysErrorDetail { Code = code, Message = message });
                 }
             }
 

@@ -1,4 +1,5 @@
 using IYS.Gateway.Application.Common;
+using IYS.Gateway.Application.Models.Consent;
 using IYS.Gateway.Application.Services;
 using IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
@@ -44,7 +45,7 @@ public class IysConsentTracker : IIysConsentTracker
         string? transactionId,
         string? status,
         DateTime? iysCreationDate = null,
-        List<object>? errors = null)
+        List<IysErrorDetail>? errors = null)
     {
         if (!_config.EnableMongoTracking)
             return;
@@ -64,24 +65,15 @@ public class IysConsentTracker : IIysConsentTracker
                 .Set(x => x.Recipient, recipient)
                 .Set(x => x.Type, type)
                 .Set(x => x.RecipientType, recipientType)
+                .Set(x => x.Source, source)
+                .Set(x => x.ConsentDate, consentDate)
+                .Set(x => x.TransactionId, transactionId)
+                .Set(x => x.Status, status)
+                .Set(x => x.IysCreationDate, iysCreationDate)
+                .Set(x => x.Errors, errors)
                 .Set(x => x.LastQueryDate, DateTime.Now);
 
-            if (!string.IsNullOrEmpty(source))
-                update = update.Set(x => x.Source, source);
-
-            if (!string.IsNullOrEmpty(consentDate))
-                update = update.Set(x => x.ConsentDate, consentDate);
-
-            if (!string.IsNullOrEmpty(transactionId))
-                update = update.Set(x => x.TransactionId, transactionId);
-
-            if (!string.IsNullOrEmpty(status))
-                update = update.Set(x => x.Status, status);
-
-            if (iysCreationDate.HasValue)
-                update = update.Set(x => x.IysCreationDate, iysCreationDate);
-
-            await collection.UpdateOneAsync(filter, update, new UpdateOptions { IsUpsert = true });
+            await collection.UpdateManyAsync(filter, update);
 
             _logger.LogInformation(
                 "IYS Consent tracked: FirmId={FirmId}, Recipient={Recipient}, Type={Type}, Status={Status}, TransactionId={TransactionId}",
@@ -124,21 +116,12 @@ public class IysConsentTracker : IIysConsentTracker
             );
 
             var updateDef = Builders<IysRequestConsentMongo>.Update
+                .Set(x => x.Status, status)
+                .Set(x => x.Source, source)
+                .Set(x => x.TransactionId, transactionId)
+                .Set(x => x.ConsentDate, consentDate)
                 .Set(x => x.LastQueryDate, DateTime.Now);
 
-            if (!string.IsNullOrEmpty(status))
-                updateDef = updateDef.Set(x => x.Status, status);
-
-            if (!string.IsNullOrEmpty(source))
-                updateDef = updateDef.Set(x => x.Source, source);
-
-            if (!string.IsNullOrEmpty(transactionId))
-                updateDef = updateDef.Set(x => x.TransactionId, transactionId);
-
-            if (!string.IsNullOrEmpty(consentDate))
-                updateDef = updateDef.Set(x => x.ConsentDate, consentDate);
-
-            // Aynı recipient + firmId + type olan TÜM kayıtları güncelle (farklı CariKart'lar olabilir)
             await collection.UpdateManyAsync(filter, updateDef);
 
             _logger.LogInformation(

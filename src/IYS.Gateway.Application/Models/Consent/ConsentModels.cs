@@ -160,3 +160,37 @@ public class UnregisterPushRequest
     [Required]
     public string Type { get; set; } = default!;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// INTERNAL — İZİN DURUM SENKRONİZASYONU (kendi MongoDB kaydımızı günceller)
+// ═══════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Internal izin durum senkronizasyon isteği.
+/// IYS Remote API'ye GİTMEZ — sadece kendi MongoDB IysRequestConsent kaydımızı
+/// ve MSSQL BusinessRulesLog (karaliste) tablomuzu günceller.
+/// Worker GetConsentChanges yanıtındaki her değişiklik kaydı için çağrılır.
+/// </summary>
+public class SyncConsentStatusRequest
+{
+    /// <summary>Alıcı adresi (telefon veya e-posta)</summary>
+    [Required]
+    public string Recipient { get; set; } = default!;
+
+    /// <summary>İzin tipi: ARAMA, MESAJ veya EPOSTA</summary>
+    [Required]
+    public string Type { get; set; } = default!;
+
+    /// <summary>İzin durumu: ONAY veya RET</summary>
+    [Required]
+    public string Status { get; set; } = default!;
+
+    /// <summary>İzin kaynağı</summary>
+    public string? Source { get; set; }
+
+    /// <summary>IYS transaction ID</summary>
+    public string? TransactionId { get; set; }
+
+    /// <summary>İzin tarihi</summary>
+    public string? ConsentDate { get; set; }
+}
