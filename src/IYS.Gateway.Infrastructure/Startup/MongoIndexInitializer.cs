@@ -51,6 +51,9 @@ public class MongoIndexInitializer : IHostedService
             var dbPortal = GenericMongoConnectionManager.Instance.GetDatabase(OurMongosServer.MONGO_206, "MongoPortal");
             await CreateBusinessRulesLogIndexes(dbPortal, cancellationToken);
 
+            // ───── 5. IysTokenCache Index'leri ─────
+            await CreateTokenCacheIndexes(db, cancellationToken);
+
             _logger.LogInformation("✅ Tüm MongoDB index'leri başarıyla oluşturuldu/doğrulandı.");
         }
         catch (Exception ex)
@@ -82,6 +85,25 @@ public class MongoIndexInitializer : IHostedService
 
         await collection.Indexes.CreateManyAsync(indexes, ct);
         _logger.LogInformation("  ├─ IysTokenLock: 2 index (unique + TTL 30s)");
+    }
+
+    /// <summary>
+    /// IysTokenCache collection'ı: firma bazlı token lookup için performans index'i.
+    /// </summary>
+    private async Task CreateTokenCacheIndexes(IMongoDatabase db, CancellationToken ct)
+    {
+        var collectionName = GetCollectionName<IysTokenCacheMongo>();
+        var collection = db.GetCollection<IysTokenCacheMongo>(collectionName);
+
+        var indexes = new List<CreateIndexModel<IysTokenCacheMongo>>
+        {
+            new(
+                Builders<IysTokenCacheMongo>.IndexKeys.Ascending(x => x.FirmGuid),
+                new CreateIndexOptions { Name = "idx_firmguid", Background = true })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes, ct);
+        _logger.LogInformation("  ├─ IysTokenCache: 1 index (firmguid)");
     }
 
     /// <summary>
