@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using IYS.Gateway.Infrastructure.Mongo.Entity;
 
+using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 namespace IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 
 [BsonCollection("NewFirms")]
@@ -167,6 +168,4 @@ public class NewFirmsMongo : MongoDbEntity
     [BsonRepresentation(BsonType.ObjectId)]
     public string? CountryMongoId { get; set; }
 
-    [BsonExtraElements]
-    public BsonDocument ExtraElements { get; set; }
 }

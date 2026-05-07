@@ -2,6 +2,7 @@ using System;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
+using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 namespace IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 
 [BsonCollection("CarQueryRequest")]
@@ -44,6 +45,4 @@ public class CarQueryRequestMongo : MongoDbEntity
     [BsonRepresentation(BsonType.ObjectId)]
     public string? QuerytypeMongoId { get; set; }
 
-    [BsonExtraElements]
-    public BsonDocument ExtraElements { get; set; }
 }

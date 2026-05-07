@@ -6,7 +6,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using IYS.Gateway.Infrastructure.Mongo.Entity;
-using IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
+using IYS.Gateway.Infrastructure.Mongo.Entity;
 using IYS.Gateway.Infrastructure.Mongo.Settings;
 using MongoDB.Driver;
 

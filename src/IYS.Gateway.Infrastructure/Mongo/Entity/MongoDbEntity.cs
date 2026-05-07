@@ -22,8 +22,12 @@ public interface IEntity<out TKey> : IEntity where TKey : IEquatable<TKey>
 /// Tüm MongoDB entity'leri için temel sınıf.
 /// ObjectId tabanlı Id özelliği taşır.
 /// </summary>
+[BsonIgnoreExtraElements]
 public class MongoDbEntity : IEntity<string>
 {
+    [BsonExtraElements]
+    public BsonDocument ExtraElements { get; set; }
+
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = null!;

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using IYS.Gateway.Infrastructure.Mongo.Providers;
 using IYS.Gateway.Infrastructure.Mongo.Settings;
-
+using IYS.Gateway.Infrastructure.Mongo.Settings;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
