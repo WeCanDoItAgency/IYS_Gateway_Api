@@ -1,5 +1,6 @@
 using System.Reflection;
 using IYS.Gateway.Infrastructure.Mongo.Entity;
+using IYS.Gateway.Infrastructure.Mongo.Entity.IYS;
 using IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 using IYS.Gateway.Infrastructure.Mongo.Settings;
@@ -42,6 +43,13 @@ public class MongoIndexInitializer : IHostedService
 
             // ───── 2. IysResponseCache Index'leri ─────
             await CreateResponseCacheIndexes(db, cancellationToken);
+
+            // ───── 3. IysRequestConsent Index'leri ─────
+            await CreateConsentIndexes(db, cancellationToken);
+
+            // ───── 4. BusinessRulesLog Index'leri (MONGO_206 / MongoPortal) ─────
+            var dbPortal = GenericMongoConnectionManager.Instance.GetDatabase(OurMongosServer.MONGO_206, "MongoPortal");
+            await CreateBusinessRulesLogIndexes(dbPortal, cancellationToken);
 
             _logger.LogInformation("✅ Tüm MongoDB index'leri başarıyla oluşturuldu/doğrulandı.");
         }
@@ -104,6 +112,71 @@ public class MongoIndexInitializer : IHostedService
 
         await collection.Indexes.CreateManyAsync(indexes, ct);
         _logger.LogInformation("  └─ IysResponseCache: 3 index (unique + TTL 300s + firmguid)");
+    }
+
+    /// <summary>
+    /// IysRequestConsent collection'ı: izin yönetimi sorguları ve güncellemeleri için performans index'leri.
+    /// </summary>
+    private async Task CreateConsentIndexes(IMongoDatabase db, CancellationToken ct)
+    {
+        var collectionName = GetCollectionName<IysRequestConsentMongo>();
+        var collection = db.GetCollection<IysRequestConsentMongo>(collectionName);
+
+        var indexes = new List<CreateIndexModel<IysRequestConsentMongo>>
+        {
+            // Compound index — UpdateMany/Upsert filtresi (FirmId + Recipient + Type)
+            new(
+                Builders<IysRequestConsentMongo>.IndexKeys
+                    .Ascending(x => x.FirmId)
+                    .Ascending(x => x.Recipient)
+                    .Ascending(x => x.Type),
+                new CreateIndexOptions { Name = "idx_firmid_recipient_type", Background = true }),
+
+            // Covering index — SubmitConsents pending sorgusu + BulkResolve
+            new(
+                Builders<IysRequestConsentMongo>.IndexKeys
+                    .Ascending(x => x.FirmId)
+                    .Ascending(x => x.TransactionId)
+                    .Ascending(x => x.Status),
+                new CreateIndexOptions { Name = "idx_firmid_txid_status", Background = true })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes, ct);
+        _logger.LogInformation("  ├─ IysRequestConsent: 2 index (compound + covering)");
+    }
+
+    /// <summary>
+    /// BusinessRulesLog collection'ı: karaliste/beyazliste sorguları için performans index'leri.
+    /// Server: MONGO_206, Database: MongoPortal
+    /// </summary>
+    private async Task CreateBusinessRulesLogIndexes(IMongoDatabase db, CancellationToken ct)
+    {
+        var collectionName = GetCollectionName<BusinessRulesLogMongo>();
+        var collection = db.GetCollection<BusinessRulesLogMongo>(collectionName);
+
+        var indexes = new List<CreateIndexModel<BusinessRulesLogMongo>>
+        {
+            // Compound index — FirmId + IsActive + BusinessRuleId + PhoneNumber (karaliste telefon sorgusu)
+            new(
+                Builders<BusinessRulesLogMongo>.IndexKeys
+                    .Ascending(x => x.FirmId)
+                    .Ascending(x => x.IsActive)
+                    .Ascending(x => x.BusinessRuleId)
+                    .Ascending(x => x.PhoneNumber),
+                new CreateIndexOptions { Name = "idx_firmid_active_ruleid_phone", Background = true }),
+
+            // Compound index — FirmId + IsActive + BusinessRuleId + Email (karaliste email sorgusu)
+            new(
+                Builders<BusinessRulesLogMongo>.IndexKeys
+                    .Ascending(x => x.FirmId)
+                    .Ascending(x => x.IsActive)
+                    .Ascending(x => x.BusinessRuleId)
+                    .Ascending(x => x.Email),
+                new CreateIndexOptions { Name = "idx_firmid_active_ruleid_email", Background = true })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes, ct);
+        _logger.LogInformation("  └─ BusinessRulesLog: 2 index (phone + email karaliste)");
     }
 
     private static string GetCollectionName<T>()
