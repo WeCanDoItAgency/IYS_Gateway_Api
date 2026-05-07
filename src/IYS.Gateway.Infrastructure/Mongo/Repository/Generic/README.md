@@ -1,467 +1,1003 @@
-# GenericMongoRepository Documentation
+# GenericMongoRepository — Geliştirici Referans Kılavuzu
 
-`GenericMongoRepository`, PORTAL_JOB_ORCHESTRATOR projelerinde kullanılan, yüksek performanslı ve MongoDB sunucuları (MONGO_206, MONGO_52, vb.) arası (cross-server) sorgu/join yetenekleri sunan güçlü bir veri erişim katmanıdır.
+`GenericMongoRepository`, PORTAL_JOB_ORCHESTRATOR projelerinde kullanılan; MongoDB sunucuları arası (MONGO_206, MONGO_52, MONGO_53 vb.) cross-server join, server-side grid loading, auto-healing index ve bulk operasyon yetenekleri sunan yüksek performanslı veri erişim katmanıdır.
 
 > [!NOTE]
-> Bu doküman güncel `GenericMongoQueryBuilder` mimarisini, "Yazma/Güncelleme/Sayfalama" optimizasyonlarını ve "Geliştirici Güvenlik Kurallarını (Safeguards)" içermektedir.
-
-## 1. Temel Okuma / Filtreleme ve Sayfalama (Pagination)
-
-Aynı veritabanındaki veriler, Expression ağaçları ile kolayca çekilebilir. Çok fazla sütun içeren tablolarda RAM dostu çalışmak için `.SelectOnly` veya `.IgnoreFields` kullanabilirsiniz. Eğer verileri DataGrid/Tablo için sayfalayarak dönecekseniz `.ToPagedListAsync` hayat kurtarır.
-
-```csharp
-var repo = new GenericMongoRepository(_connectionManager);
-
-// Klasik Liste Çekme (Sadece 3 Sütun)
-var result = await repo.Query<SubelerMongo>()
-    .SelectOnly(s => s.Id, s => s.SubeKodu, s => s.Unvan) 
-    .Where(s => s.IsActive == true)
-    .Skip(10)
-    .Take(50)
-    .ToListAsync();
-
-// Otomatik Sayfalama (Paralel Count ve Data Çeker)
-PagedResult<SubelerMongo> pagedResult = await repo.Query<SubelerMongo>()
-    .Where(s => s.IsActive == true)
-    .ToPagedListAsync(pageNumber: 1, pageSize: 50);
-
-Console.WriteLine($"Toplam Kayıt: {pagedResult.TotalCount}");
-```
-
-> [!WARNING]
-> Eğer `LookupCrossServer` veya `Lookup` yapıyorsanız, Join şartında kullandığınız alanı (`localField`) `.SelectOnly()` içerisine eklemeyi UNUTMAYIN! Eğer eklerseniz veri çekilmeyeceği için Join boşa düşer.
+> Her metot için 2-3 gerçek kullanım örneği mevcuttur. Geliştirici herhangi bir senaryoyu anahtar kelimeyle arayıp bulabilmelidir.
 
 ---
 
-## 2. Kısmi Güncelleme (Partial Updates)
+## İçindekiler
 
-Tablodaki 100 sütunlu veriyi RAM'e çekip değiştirmek yerine direkt veritabanı seviyesinde işlem yapabilirsiniz.
+1. [Filtreleme ve Temel Okuma](#1-filtreleme-ve-temel-okuma)
+2. [Sıralama (OrderBy / OrderByDescending)](#2-sıralama)
+3. [Sayfalama (Skip / Take / ToPagedListAsync)](#3-sayfalama)
+4. [Projeksiyon (SelectOnly / IgnoreFields)](#4-projeksiyon)
+5. [Terminal — Veri Okuma (ToListAsync / FirstOrDefault / Count / Any)](#5-terminal--veri-okuma)
+6. [Kısmi Güncelleme (UpdateOne / UpdateMany)](#6-kısmi-güncelleme)
+7. [Upsert (UpsertOneAsync)](#7-upsert)
+8. [Atomik İşlemler (FindOneAndUpdate / FindOneAndDelete)](#8-atomik-i̇şlemler)
+9. [Aynı Sunucu Join (Lookup)](#9-aynı-sunucu-join-lookup)
+10. [Cross-Server Join (LookupCrossServer)](#10-cross-server-join-lookupcrossserver)
+11. [Cross-Server Filtreleme (WhereCrossServer)](#11-cross-server-filtreleme-wherecrossserver)
+12. [Ekleme / Silme (Insert / Delete)](#12-ekleme--silme)
+13. [Toplu İşlemler (BulkWriteAsync)](#13-toplu-i̇şlemler-bulkwriteasync)
+14. [Transaction / Session](#14-transaction--session)
+15. [Server-Side Grid Loading (LoadServerSideAsync)](#15-server-side-grid-loading)
+16. [Direct Repository CRUD](#16-direct-repository-crud)
+17. [Auto-Healing Index Engine](#17-auto-healing-index-engine)
+18. [Geliştirici Kısıtlamaları ve Hatalar](#18-geliştirici-kısıtlamaları-ve-hatalar)
+19. [Kurulum ve DI Kullanımı](#19-kurulum-ve-di-kullanımı)
+
+---
+
+## 1. Filtreleme ve Temel Okuma
+
+`Where()` birden fazla çağrıda **AND** ile birleştirilir. Lambda expression veya `FilterDefinition<T>` kabul eder.
 
 ```csharp
-var updateDef = Builders<SubelerMongo>.Update.Set(x => x.IsActive, false);
+// ÖRNEK 1 — Tek koşul
+var aktifSubeler = await _repo.Query<SubelerMongo>()
+    .Where(s => s.IsActive == true)
+    .ToListAsync();
 
-// ÖRNEK 1: Şarta uyan TEK BİR (İlk) kaydı günceller
-var singleResult = await repo.Query<SubelerMongo>()
-    .Where(s => s.Id == "5f1b2c3d...")
-    .UpdateOneAsync(updateDef);
+// ÖRNEK 2 — Çok koşullu (AND zinciri)
+var sonuclar = await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+    .Where(x => x.FirmId == 27)
+    .Where(x => x.Status == "APPROVED")
+    .Where(x => x.ConsentDate >= DateTime.Today.AddDays(-30))
+    .ToListAsync();
 
-// ÖRNEK 2: Şarta uyan TÜM kayıtları günceller
-var multipleResult = await repo.Query<SubelerMongo>()
-    .Where(s => s.FirmaMongoId == "123")
-    .UpdateManyAsync(updateDef);
+// ÖRNEK 3 — Native FilterDefinition ile (karmaşık OR sorgusu)
+var filter = Builders<SubelerMongo>.Filter.Or(
+    Builders<SubelerMongo>.Filter.Eq(x => x.SubeKodu, 100),
+    Builders<SubelerMongo>.Filter.Eq(x => x.SubeKodu, 200)
+);
+var vip = await _repo.Query<SubelerMongo>()
+    .Where(filter)
+    .ToListAsync();
+```
+
+> [!WARNING]
+> `Where()` null gelirse `ArgumentNullException` fırlatır. Koşullu filtre için `if` bloğu kullanın:
+> ```csharp
+> var q = _repo.Query<SubelerMongo>();
+> if (firmId.HasValue) q = q.Where(x => x.FirmaMongoId == firmId.ToString());
+> var list = await q.ToListAsync();
+> ```
+
+---
+
+## 2. Sıralama
+
+`OrderBy` ve `OrderByDescending` zincirlenerek çok alanlı sıralama yapılabilir.
+
+```csharp
+// ÖRNEK 1 — Tek alan artan
+var liste = await _repo.Query<SubelerMongo>()
+    .Where(s => s.IsActive == true)
+    .OrderBy(s => s.Unvan)
+    .ToListAsync();
+
+// ÖRNEK 2 — Çok alanlı (önce tarih azalan, sonra ad artan)
+var liste2 = await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+    .Where(x => x.FirmId == 27)
+    .OrderByDescending(x => x.ConsentDate)
+    .OrderBy(x => x.PhoneNumber)
+    .ToListAsync();
+
+// ÖRNEK 3 — FindOneAndDelete ile birlikte FIFO sıra
+var enEskiGorev = await _repo.Query<PendingTaskMongo>()
+    .Where(t => t.Status == "READY")
+    .OrderBy(t => t.CreatedAt)
+    .FindOneAndDeleteAsync();
+```
+
+---
+
+## 3. Sayfalama
+
+### Skip / Take (Manuel)
+
+```csharp
+// ÖRNEK 1 — Sayfa 3, 20'şerlik (skip=40, take=20)
+var sayfa3 = await _repo.Query<SubelerMongo>()
+    .Where(s => s.IsActive == true)
+    .OrderBy(s => s.Unvan)
+    .Skip(40)
+    .Take(20)
+    .ToListAsync();
+
+// ÖRNEK 2 — Güvenlik limiti: maksimum 100 kayıt
+var guvenli = await _repo.Query<LogMongo>()
+    .Where(l => l.Level == "ERROR")
+    .OrderByDescending(l => l.CreatedAt)
+    .Take(100)
+    .ToListAsync();
+```
+
+> [!TIP]
+> `Skip()` negatif değeri otomatik **0** yapar. `Take(0)` veya negatif yok sayılır.
+
+### ToPagedListAsync (Otomatik — Paralel Count + Data)
+
+```csharp
+// ÖRNEK 1 — Grid için sayfalı sonuç
+PagedResult<SubelerMongo> sayfa = await _repo.Query<SubelerMongo>()
+    .Where(s => s.IsActive == true)
+    .OrderBy(s => s.SubeKodu)
+    .ToPagedListAsync(pageNumber: 2, pageSize: 25);
+
+Console.WriteLine($"Toplam: {sayfa.TotalCount}, Bu sayfada: {sayfa.Data.Count}");
+
+// ÖRNEK 2 — HTTP API response mapping
+var result = await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+    .Where(x => x.FirmId == firmId)
+    .OrderByDescending(x => x.ConsentDate)
+    .ToPagedListAsync(pageNumber, pageSize);
+
+return Ok(new { total = result.TotalCount, data = result.Data });
+```
+
+> [!NOTE]
+> `TotalCount` ve `Data` paralel olarak çekilir — iki ayrı MongoDB sorgusu eşzamanlı çalışır. `PagedResult<T>` immutable'dır, constructor sonrası değiştirilemez.
+
+---
+
+## 4. Projeksiyon
+
+### SelectOnly — Sadece Belirtilen Alanlar
+
+```csharp
+// ÖRNEK 1 — Sadece 3 alan (RAM tasarrufu)
+var kodlar = await _repo.Query<SubelerMongo>()
+    .SelectOnly(s => s.Id, s => s.SubeKodu, s => s.Unvan)
+    .Where(s => s.IsActive == true)
+    .ToListAsync();
+
+// ÖRNEK 2 — Join'de localField mutlaka SelectOnly'ye dahil edilmeli
+var liste = await _repo.Query<KullanicilarMongo>()
+    .SelectOnly(k => k.Id, k => k.Ad, k => k.SubeMongoId) // SubeMongoId join için şart!
+    .LookupCrossServer<SubelerMongo>(
+        OurMongosServer.MONGO_206, "MongoPortal",
+        k => k.SubeMongoId, s => s.Id, "SubeBilgisi")
+    .ToListAsync();
+
+// ÖRNEK 3 — Dropdown için sadece id + label
+var dropdown = await _repo.Query<SubelerMongo>()
+    .SelectOnly(s => s.Id, s => s.Unvan)
+    .Where(s => s.IsActive == true)
+    .OrderBy(s => s.Unvan)
+    .ToListAsync();
+```
+
+### IgnoreFields — Belirtilen Alanları Gizle
+
+```csharp
+// ÖRNEK 1 — Büyük binary alanı atla
+var liste = await _repo.Query<BelgeMongo>()
+    .IgnoreFields(b => b.RawPdfBytes, b => b.ThumbnailBytes)
+    .Where(b => b.FirmId == 27)
+    .ToListAsync();
+
+// ÖRNEK 2 — Log tablosunda payload gizle
+var loglar = await _repo.Query<ApiLogMongo>()
+    .IgnoreFields(l => l.RequestBody, l => l.ResponseBody)
+    .Where(l => l.StatusCode >= 500)
+    .OrderByDescending(l => l.CreatedAt)
+    .Take(50)
+    .ToListAsync();
+```
+
+> [!WARNING]
+> `SelectOnly` ve `IgnoreFields` aynı sorguda birlikte kullanılmamalıdır — MongoDB driver çakışma yaratır.
+
+---
+
+## 5. Terminal — Veri Okuma
+
+### ToListAsync
+
+```csharp
+// ÖRNEK 1 — Basit liste
+var tumSubeler = await _repo.Query<SubelerMongo>().ToListAsync();
+
+// ÖRNEK 2 — CancellationToken ile (HTTP request iptalinde)
+var liste = await _repo.Query<SubelerMongo>()
+    .Where(s => s.IsActive == true)
+    .ToListAsync(cancellationToken);
+```
+
+### FirstOrDefaultAsync
+
+```csharp
+// ÖRNEK 1 — Tek kayıt bul (null kontrolü şart)
+var sube = await _repo.Query<SubelerMongo>()
+    .Where(s => s.SubeKodu == 100)
+    .FirstOrDefaultAsync();
+
+if (sube == null) throw new NotFoundException("Şube bulunamadı");
+
+// ÖRNEK 2 — En son log kaydı
+var sonHata = await _repo.Query<ApiLogMongo>()
+    .Where(l => l.StatusCode >= 500)
+    .OrderByDescending(l => l.CreatedAt)
+    .FirstOrDefaultAsync();
+
+// ÖRNEK 3 — Token cache kontrolü
+var token = await _repo.Query<IysTokenCacheMongo>(OurMongosServer.MONGO_52, "tokenDb")
+    .Where(t => t.FirmGuid == firmGuid.ToString())
+    .FirstOrDefaultAsync();
+var accessToken = token?.AccessToken ?? throw new UnauthorizedException();
+```
+
+### CountAsync
+
+```csharp
+// ÖRNEK 1 — Toplam aktif şube sayısı
+long aktifSayi = await _repo.Query<SubelerMongo>()
+    .Where(s => s.IsActive == true)
+    .CountAsync();
+
+// ÖRNEK 2 — Bugün onaylanan kayıt sayısı
+long bugunOnaylanan = await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+    .Where(x => x.ConsentDate >= DateTime.Today)
+    .Where(x => x.Status == "APPROVED")
+    .CountAsync();
+```
+
+### AnyAsync
+
+```csharp
+// ÖRNEK 1 — Kayıt var mı kontrolü
+bool varMi = await _repo.Query<IysTokenCacheMongo>(OurMongosServer.MONGO_52, "tokenDb")
+    .Where(t => t.FirmGuid == firmGuid.ToString())
+    .AnyAsync();
+
+if (!varMi) await CreateTokenAsync(firmGuid);
+
+// ÖRNEK 2 — Duplicate kontrolü (insert öncesi)
+bool duplicate = await _repo.Query<SubelerMongo>()
+    .Where(s => s.SubeKodu == yeniSube.SubeKodu)
+    .AnyAsync();
+
+if (duplicate) throw new ConflictException($"SubeKodu {yeniSube.SubeKodu} zaten mevcut.");
+```
+
+> [!TIP]
+> `AnyAsync`, dahili olarak `CountDocumentsAsync` ile `Limit(1)` kullanır — tüm koleksiyonu saymaz, çok hızlıdır.
+
+---
+
+## 6. Kısmi Güncelleme
+
+### UpdateOneAsync — İlk Eşleşen Kayıt
+
+```csharp
+// ÖRNEK 1 — Tek alan güncelle
+var update = Builders<SubelerMongo>.Update.Set(x => x.IsActive, false);
+var result = await _repo.Query<SubelerMongo>()
+    .Where(s => s.Id == "6633b4...id...")
+    .UpdateOneAsync(update);
+// result.ModifiedCount == 1 ise başarılı
+
+// ÖRNEK 2 — Birden fazla alan
+var multiUpdate = Builders<IysRequestConsentMongo>.Update
+    .Set(x => x.Status, "CANCELLED")
+    .Set(x => x.UpdatedAt, DateTime.Now)
+    .Set(x => x.UpdatedBy, "system");
+
+await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+    .Where(x => x.TransactionId == transactionId)
+    .UpdateOneAsync(multiUpdate);
+```
+
+### UpdateManyAsync — Tüm Eşleşen Kayıtlar
+
+```csharp
+// ÖRNEK 1 — Toplu deaktivasyon
+var update = Builders<SubelerMongo>.Update.Set(x => x.IsActive, false);
+var result = await _repo.Query<SubelerMongo>()
+    .Where(s => s.FirmaMongoId == firmaId)
+    .UpdateManyAsync(update);
+Console.WriteLine($"{result.ModifiedCount} şube deaktive edildi.");
+
+// ÖRNEK 2 — Toplu alan güncelleme + array push
+var logUpdate = Builders<SyncJobMongo>.Update
+    .Set(x => x.Status, "COMPLETED")
+    .Set(x => x.CompletedAt, DateTime.Now)
+    .Inc(x => x.RetryCount, 1);
+
+await _repo.Query<SyncJobMongo>()
+    .Where(j => j.BatchId == batchId && j.Status == "RUNNING")
+    .UpdateManyAsync(logUpdate);
+
+// ÖRNEK 3 — Null alanları temizle (unset)
+var unsetUpdate = Builders<ApiLogMongo>.Update.Unset(x => x.TempData);
+await _repo.Query<ApiLogMongo>()
+    .Where(l => l.CreatedAt < DateTime.Today.AddDays(-90))
+    .UpdateManyAsync(unsetUpdate);
 ```
 
 > [!CAUTION]
-> Update işlemleri sırasında `.Lookup` veya `.LookupCrossServer` **KULLANILAMAZ**. Hata fırlatır.
+> `UpdateOneAsync` / `UpdateManyAsync` ile birlikte `.Lookup()` veya `.LookupCrossServer()` **KULLANILAMAZ**. `NotSupportedException` fırlatır.
 
 ---
 
-## 3. Upsert ve Atomik Find-and-Modify İşlemleri
+## 7. Upsert
 
-### A. UpsertOneAsync — Varsa Güncelle, Yoksa Ekle
+**Varsa güncelle, yoksa ekle.** Token cache, konfigürasyon, distributed lock gibi "tek kayıt garantisi" senaryolarında kullanılır.
 
-Kayıt yoksa oluşturur, varsa günceller. Token cache, konfigürasyon gibi "tek kayıt garantisi" gereken senaryolarda kullanılır.
+```csharp
+// ÖRNEK 1 — Token cache upsert
+var update = Builders<IysTokenCacheMongo>.Update
+    .Set(x => x.AccessToken, response.AccessToken)
+    .Set(x => x.RefreshToken, response.RefreshToken)
+    .Set(x => x.ExpiresAt, DateTime.Now.AddHours(1))
+    .Set(x => x.UpdatedAt, DateTime.Now)
+    .SetOnInsert(x => x.CreatedAt, DateTime.Now); // sadece ilk insert'te!
 
-#### Mekanizma Detayı
+await _repo.Query<IysTokenCacheMongo>(OurMongosServer.MONGO_52, "tokenDb")
+    .Where(x => x.FirmGuid == firmGuid.ToString())
+    .UpsertOneAsync(update);
 
-`UpsertOneAsync` arka planda MongoDB'nin `UpdateOne` komutunu `IsUpsert: true` seçeneğiyle çalıştırır. İki farklı senaryo vardır:
+// ÖRNEK 2 — Konfigürasyon upsert
+var configUpdate = Builders<AppConfigMongo>.Update
+    .Set(x => x.Value, yeniDeger)
+    .Set(x => x.UpdatedAt, DateTime.Now)
+    .SetOnInsert(x => x.CreatedAt, DateTime.Now)
+    .SetOnInsert(x => x.Key, configKey);
 
-**Senaryo 1: Kayıt VAR (Where filtresi eşleşti)**
-- `Set()` ile belirtilen alanlar güncellenir
-- `SetOnInsert()` ile belirtilen alanlar **ATLANIR** (kayıt zaten mevcut olduğu için)
-- **Update'te yazılmayan alanlar olduğu gibi kalır, dokunulmaz**
-- Mevcut doküman korunur, sadece belirtilen alanlar değişir
+await _repo.Query<AppConfigMongo>()
+    .Where(x => x.Key == configKey)
+    .UpsertOneAsync(configUpdate);
 
-**Senaryo 2: Kayıt YOK (Where filtresi eşleşmedi)**
-- MongoDB yeni bir doküman oluşturur
-- `_id` → otomatik ObjectId üretilir
-- `Set()` ile belirtilen alanlar yazılır
-- `SetOnInsert()` ile belirtilen alanlar **yazılır** (sadece bu senaryoda aktif!)
-- **Update'te yazılmayan alanlar MEVCUT OLMAZ** (null/default kalır)
+// ÖRNEK 3 — Distributed lock alma
+var lockUpdate = Builders<DistributedLockMongo>.Update
+    .Set(x => x.LockedBy, Environment.MachineName)
+    .Set(x => x.LockedAt, DateTime.Now)
+    .SetOnInsert(x => x.Resource, resourceName);
+
+await _repo.Query<DistributedLockMongo>(OurMongosServer.MONGO_52, "locks")
+    .Where(x => x.Resource == resourceName && x.LockedBy == null)
+    .UpsertOneAsync(lockUpdate);
+```
 
 > [!WARNING]
-> **Senaryo 2'de dikkat:** Yeni doküman oluşturulurken sadece `Set()` ve `SetOnInsert()` içinde belirttiğiniz alanlar yazılır. Belirtmediğiniz alanlar doküman'da **hiç olmaz**. Bu yüzden upsert kullanırken tüm zorunlu alanları `Set()` içine eklediğinizden emin olun.
-
-#### Örnek: Token Cache Upsert
-
-```csharp
-var update = Builders<IysTokenCacheMongo>.Update
-    .Set(x => x.FirmGuid, firmGuid.ToString())     // Her zaman yazılır
-    .Set(x => x.AccessToken, response.AccessToken)  // Her zaman yazılır
-    .Set(x => x.RefreshToken, response.RefreshToken) // Her zaman yazılır
-    .Set(x => x.UpdatedAt, DateTime.Now)             // Her zaman yazılır
-    .SetOnInsert(x => x.CreatedAt, DateTime.Now);    // Sadece ilk insert'te!
-
-await repo.Query<IysTokenCacheMongo>(OurMongosServer.MONGO_52, "tokenDb")
-    .Where(x => x.FirmGuid == firmGuidStr)
-    .UpsertOneAsync(update);
-```
-
-**İlk çağrı (kayıt yok):** Tüm alanlar yazılır + `CreatedAt` set edilir.
-**Sonraki çağrılar (kayıt var):** Token güncellenir, `CreatedAt` korunur, `CachedBrandCode` gibi diğer alanlar **dokunulmaz**.
-
-#### Örnek: Konfigürasyon Ayarı (Tek Kayıt Garantisi)
-
-```csharp
-var update = Builders<AppConfigMongo>.Update
-    .Set(x => x.Key, "MaxRetryCount")
-    .Set(x => x.Value, "5")
-    .Set(x => x.UpdatedAt, DateTime.Now)
-    .SetOnInsert(x => x.CreatedAt, DateTime.Now);
-
-await repo.Query<AppConfigMongo>()
-    .Where(x => x.Key == "MaxRetryCount")
-    .UpsertOneAsync(update);
-// İlk seferde kayıt oluşturur, sonrakilerde sadece Value güncellenir
-```
+> `SetOnInsert()` sadece **yeni kayıt oluşturulurken** çalışır. Mevcut kayıt güncellenirken bu alanlar atlanır. Tüm zorunlu alanları `Set()` içine alın.
 
 ---
 
-### B. FindOneAndUpdateAsync — Güncelle ve Güncel Dokümanı Dön
+## 8. Atomik İşlemler
 
-Atomic olarak günceller ve güncellenmiş (veya önceki) dokümanı döner. Concurrent ortamlarda race condition önler.
-
-#### Mekanizma Detayı
-
-- Güncelleme ve okuma **tek bir atomic operasyondur** — arada başka thread araya giremez
-- `returnAfter: true` (varsayılan): **Güncelleme SONRASI** dokümanı döner
-- `returnAfter: false`: **Güncelleme ÖNCESİ** dokümanı döner
-- Filtre eşleşmezse `null` döner
-
-#### Ne Zaman Kullanılır?
-- Concurrent sayaçlar (ör. request counter)
-- Distributed lock mekanizmaları
-- "Güncelle ve sonucu hemen kullan" senaryoları
+### FindOneAndUpdateAsync — Güncelle ve Döndür
 
 ```csharp
-// Sayacı artır ve güncel değeri al
-var update = Builders<SubelerMongo>.Update.Inc(x => x.RequestCount, 1);
-
-var updated = await repo.Query<SubelerMongo>()
+// ÖRNEK 1 — Sayacı artır, güncel değeri al (returnAfter: true varsayılan)
+var incUpdate = Builders<SubelerMongo>.Update.Inc(x => x.RequestCount, 1);
+var updated = await _repo.Query<SubelerMongo>()
     .Where(s => s.SubeKodu == 100)
-    .FindOneAndUpdateAsync(update);
-// updated.RequestCount → güncelleme sonrası değer (ör: 43)
+    .FindOneAndUpdateAsync(incUpdate);
+Console.WriteLine($"Yeni sayaç: {updated?.RequestCount}");
 
-// Güncelleme öncesi değeri al (eski değer lazımsa)
-var before = await repo.Query<SubelerMongo>()
+// ÖRNEK 2 — Güncelleme öncesi değeri al
+var before = await _repo.Query<SubelerMongo>()
     .Where(s => s.SubeKodu == 100)
-    .FindOneAndUpdateAsync(update, returnAfter: false);
-// before.RequestCount → güncelleme öncesi değer (ör: 43, güncelleme sonrası aslında 44)
+    .FindOneAndUpdateAsync(incUpdate, returnAfter: false);
+Console.WriteLine($"Eski değer: {before?.RequestCount}"); // +1 öncesi
+
+// ÖRNEK 3 — Status geçişi + timestamp (atomic state machine)
+var statusUpdate = Builders<SyncJobMongo>.Update
+    .Set(x => x.Status, "PROCESSING")
+    .Set(x => x.StartedAt, DateTime.Now)
+    .Set(x => x.ProcessedBy, Environment.MachineName);
+
+var job = await _repo.Query<SyncJobMongo>()
+    .Where(j => j.Status == "PENDING")
+    .OrderBy(j => j.CreatedAt)
+    .FindOneAndUpdateAsync(statusUpdate);
+
+if (job == null) return; // Alınacak iş yok
 ```
 
----
-
-### C. FindOneAndDeleteAsync — Sil ve Silinen Dokümanı Dön
-
-Queue-like pattern'lerde veya "al ve sil" senaryolarında kullanılır.
-
-#### Mekanizma Detayı
-
-- Silme ve okuma **tek bir atomic operasyondur**
-- Filtre eşleşmezse `null` döner
-- `.OrderBy()` ile sıralama yapılabilir — bu sayede "en eski görevi al ve sil" gibi FIFO kuyruk pattern'leri kurulabilir
+### FindOneAndDeleteAsync — Sil ve Döndür
 
 ```csharp
-// FIFO kuyruk: en eski hazır görevi al ve sil
-var deleted = await repo.Query<PendingTaskMongo>()
-    .Where(t => t.Status == "ready")
+// ÖRNEK 1 — FIFO kuyruk: en eski görevi al ve sil
+var task = await _repo.Query<PendingTaskMongo>()
+    .Where(t => t.Status == "READY")
     .OrderBy(t => t.CreatedAt)
     .FindOneAndDeleteAsync();
 
-if (deleted != null)
-{
-    Console.WriteLine($"İşlenen görev: {deleted.Id}");
-    // deleted → silinen dokümanın tüm verisi burada
-}
-```
+if (task != null)
+    await ProcessTaskAsync(task);
 
-> [!CAUTION]
-> Find-and-Modify işlemleri sırasında `.Lookup` veya `.LookupCrossServer` **KULLANILAMAZ**. Hata fırlatır.
+// ÖRNEK 2 — Distributed lock bırak
+var released = await _repo.Query<DistributedLockMongo>(OurMongosServer.MONGO_52, "locks")
+    .Where(x => x.Resource == resourceName && x.LockedBy == Environment.MachineName)
+    .FindOneAndDeleteAsync();
+
+// ÖRNEK 3 — Tek kullanımlık OTP/Token sil
+var otp = await _repo.Query<OtpTokenMongo>()
+    .Where(o => o.Code == givenCode && o.PhoneNumber == phone && o.ExpiresAt > DateTime.Now)
+    .FindOneAndDeleteAsync();
+
+if (otp == null) throw new InvalidOperationException("Geçersiz veya süresi dolmuş OTP.");
+```
 
 > [!TIP]
-> **UpdateOneAsync vs UpsertOneAsync vs FindOneAndUpdateAsync — Hangisini Seçmeliyim?**
->
-> | Metot | Kayıt Yoksa | Sonuç Döner mi? | Kullanım |
-> |:------|:-----------|:----------------|:---------|
-> | `UpdateOneAsync` | Hiçbir şey yapmaz | ❌ Sadece `UpdateResult` | Normal güncelleme |
-> | `UpsertOneAsync` | Yeni kayıt oluşturur | ❌ Sadece `UpdateResult` | Cache, config, tek kayıt garantisi |
-> | `FindOneAndUpdateAsync` | `null` döner | ✅ Güncel dokümanı döner | Sayaç, lock, "güncelle ve kullan" |
+> | Metot | Kayıt Yoksa | Sonuç | Kullanım |
+> |:------|:-----------|:------|:---------|
+> | `UpdateOneAsync` | Hiçbir şey yapmaz | `UpdateResult` | Normal güncelleme |
+> | `UpsertOneAsync` | Yeni kayıt oluşturur | `UpdateResult` | Cache, config |
+> | `FindOneAndUpdateAsync` | `null` döner | Güncel doküman | Sayaç, state machine |
+> | `FindOneAndDeleteAsync` | `null` döner | Silinen doküman | Kuyruk, OTP |
 
 ---
 
-## 4. Toplu İşlemler (Bulk Write)
+## 9. Aynı Sunucu Join (Lookup)
 
-Binlerce kaydı tek seferde MongoDB'ye göndermek isterseniz (Performans için):
-
-```csharp
-var requests = new List<WriteModel<SubelerMongo>>();
-
-foreach(var item in binkayitlikListe) {
-    var filter = Builders<SubelerMongo>.Filter.Eq(x => x.Id, item.Id);
-    var update = Builders<SubelerMongo>.Update.Set(x => x.GuncellenmeTarihi, DateTime.Now);
-    requests.Add(new UpdateOneModel<SubelerMongo>(filter, update));
-}
-
-// 10.000 kaydı tek bir ağ paketiyle gönder
-await repo.BulkWriteAsync(requests);
-```
-
----
-
-## 5. Transaction / Session Yönetimi
-
-Kritik finansal veya birden çok tabloyu etkileyen işlemlerde tutarlılık (ACID) sağlamak için:
-
-> [!WARNING]
-> Transaction'lar **sadece Replica Set kurulumu olan MongoDB sunucularında çalışır**. Standalone MongoDB'ler hata fırlatır!
+Aynı MongoDB sunucusu/veritabanı içinde `$lookup` (LEFT JOIN) yapar.
 
 ```csharp
-using var session = await repo.StartSessionAsync();
-session.StartTransaction();
+// ÖRNEK 1 — Kullanıcıya şube bilgisini ekle
+var kullanicilar = await _repo.Query<KullanicilarMongo>()
+    .SelectOnly(k => k.Id, k => k.Ad, k => k.SubeMongoId) // localField şart!
+    .Lookup<SubelerMongo>(
+        localField: k => k.SubeMongoId,
+        foreignField: s => s.Id,
+        @as: "SubeBilgisi")
+    .Where(k => k.IsActive == true)
+    .ToListAsync();
 
-try {
-    // İşlemler buraya (session parametresi ile)
-    await session.CommitTransactionAsync();
-} 
-catch {
-    await session.AbortTransactionAsync();
-}
-```
+// SubeBilgisi'ne erişim:
+// k.ExtraElements["SubeBilgisi"] as BsonArray
 
----
-
-## 6. Cross-Server Join İşlemleri (Farklı Sunucular Arası)
-
-Eğer Subeler koleksiyonu `MONGO_206` üzerinde, CariKartlar koleksiyonu ise `MONGO_52` üzerindeyse, `LookupCrossServer` kullanılır. 
-
-> [!TIP]
-> **Batching/Chunking:** `LookupCrossServer` büyük verilerde performans sorunu yaşanmaması ve MongoDB'nin 16MB BSON limitine takılmaması için **verileri arka planda 10.000'lik paketler (Chunk) halinde çeker** ve bellekte birleştirir.
-
-```csharp
-var result = await repo.Query<NewDocumentsMongo>() // Default 206
-    .LookupCrossServer<CariKartlar>(
-        server: OurMongosServer.MONGO_52, 
-        database: "acente365", 
-        localField: d => d.CariKartMongoId,
-        foreignField: c => c.Id,
-        @as: "CariKartDetaylari" // Zorunlu parametre!
-    )
-    .Where(d => d.IsActive == true)
+// ÖRNEK 2 — Çoklu join (aynı sunucu)
+var teklifler = await _repo.Query<TeklifMongo>()
+    .SelectOnly(t => t.Id, t => t.SubeMongoId, t => t.MusteriMongoId, t => t.Tutar)
+    .Lookup<SubelerMongo>(
+        localField: t => t.SubeMongoId,
+        foreignField: s => s.Id,
+        @as: "Sube")
+    .Lookup<MusteriMongo>(
+        localField: t => t.MusteriMongoId,
+        foreignField: m => m.Id,
+        @as: "Musteri")
+    .Where(t => t.Tutar > 1000)
     .ToListAsync();
 ```
 
-### Multiple Join (Çoklu Join) ve Fluent Yapı
+> [!WARNING]
+> `localField` olarak kullandığınız alanı `SelectOnly()` içine **mutlaka** ekleyin. Aksi hâlde join boşa düşer.
+> Aynı `@as` alias'ı iki kez kullanırsanız `InvalidOperationException` fırlatılır.
 
-Mimarimizi **"Fluent (Akıcı)"** bir düzende kurduğumuz için arka arkaya dilediğiniz kadar `.Lookup()` veya `.LookupCrossServer()` ekleyebilirsiniz. 
+---
+
+## 10. Cross-Server Join (LookupCrossServer)
+
+Farklı MongoDB sunucusundaki koleksiyonla in-memory join. Lokal ID'ler toplanır → foreign sunucuya batch sorgu → bellekte eşleştirilir.
+
+> [!TIP]
+> **Otomatik Chunking:** 10.000'lik paketler halinde çeker. MongoDB 16MB BSON limitine takılmaz.
 
 ```csharp
-var kullanicilar = await repo.Query<KullanicilarMongo>()
-    // 1. Join: Aynı veritabanındaki Şube'yi çek (Örn: MONGO_206)
-    .Lookup<SubelerMongo>(
-        localField: k => k.SubeMongoId, 
-        foreignField: s => s.Id, 
-        @as: "SubeBilgisi"
-    )
-    // 2. Join: Farklı veritabanındaki Firma'yı çek (Örn: MONGO_52 CariKartlar)
+// ÖRNEK 1 — Şubeye CariKart bilgisi ekle (206 → 52)
+var subeler = await _repo.Query<SubelerMongo>()
+    .SelectOnly(s => s.Id, s => s.Unvan, s => s.CariKartMongoId)
     .LookupCrossServer<CariKartlar>(
         server: OurMongosServer.MONGO_52,
         database: "acente365",
-        localField: k => k.FirmaMongoId,
+        localField: s => s.CariKartMongoId,
         foreignField: c => c.Id,
-        @as: "FirmaBilgisi"
-    )
+        @as: "CariKartDetay")
+    .Where(s => s.IsActive == true)
+    .ToListAsync();
+
+// CariKartDetay'a erişim:
+// s.ExtraElements["CariKartDetay"] as BsonArray
+
+// ÖRNEK 2 — Çoklu cross-server join (206 + 52 + 53)
+var kayitlar = await _repo.Query<NewDocumentsMongo>()
+    .SelectOnly(d => d.Id, d => d.CariKartMongoId, d => d.OfferId, d => d.Tutar)
+    .LookupCrossServer<CariKartlar>(
+        OurMongosServer.MONGO_52, "acente365",
+        d => d.CariKartMongoId, c => c.Id, "CariKart")
+    .LookupCrossServer<OffersMongo>(
+        OurMongosServer.MONGO_53, "offers",
+        d => d.OfferId, o => o.Id, "Teklif")
+    .Where(d => d.IsActive == true)
+    .ToListAsync();
+
+// ÖRNEK 3 — Aynı sunucu + cross-server karma join
+var result = await _repo.Query<KullanicilarMongo>()
+    .SelectOnly(k => k.Id, k => k.Ad, k => k.SubeMongoId, k => k.FirmaMongoId)
+    .Lookup<SubelerMongo>(                     // aynı sunucu ($lookup)
+        k => k.SubeMongoId, s => s.Id, "Sube")
+    .LookupCrossServer<CariKartlar>(           // farklı sunucu (in-memory)
+        OurMongosServer.MONGO_52, "acente365",
+        k => k.FirmaMongoId, c => c.Id, "Firma")
     .Where(k => k.IsActive == true)
     .ToListAsync();
 ```
 
 > [!WARNING]
-> **Desteklenmeyen Tek Senaryo (Deep/Nested Join):** Şu anki yapıda her zaman en baştaki "Ana Tablo'dan (Root Entity)" dışarıya paralel join atabilirsiniz. Çektiğiniz bir Şube'nin içindeki alanı kullanıp 3. bir tabloya zincirleme join (Nested Lookup) **yapılamaz**.
+> Array/List tipindeki alanlar `localField` veya `foreignField` olarak kullanılamaz. Sadece tekil (1-1) eşleşmeler desteklenir.
 
 ---
 
-## 7. Cross-Server Filtreleme (WhereCrossServer / Reverse Query)
+## 11. Cross-Server Filtreleme (WhereCrossServer)
 
-Cross-Server işlemlerde asıl performans sorunu "Alt tabloya göre filtrelemektir". Eğer alt tablodan gelen bir şarta göre ana tablodaki verileri filtrelemek istiyorsanız `WhereCrossServer` kullanmalısınız.
+Foreign sunucuya **önce filtre uygulanır**, eşleşen ID'ler ana sorguya `IN` olarak eklenir. Hem filtreleme hem join tek çağrıda yapılır.
 
 ```csharp
-var result = await repo.Query<SubelerMongo>() // 206 Sunucusu
+// ÖRNEK 1 — "Ahmet" unvanlı carikartların şubelerini getir
+var subeler = await _repo.Query<SubelerMongo>()
     .WhereCrossServer<CariKartlar>(
         server: OurMongosServer.MONGO_52,
         database: "acente365",
         localField: s => s.CariKartMongoId,
         foreignField: c => c.Id,
-        foreignFilter: c => c.Unvan.Contains("Ahmet"), // Önce 52'de Ahmet'leri bul!
-        @as: "CariKartlar"
-    )
+        foreignFilter: c => c.Unvan.Contains("Ahmet"),
+        @as: "CariKart")
+    .Where(s => s.IsActive == true)
+    .ToListAsync();
+
+// ÖRNEK 2 — Belirli teklif tipindeki şubeleri getir
+var sonuclar = await _repo.Query<SubelerMongo>()
+    .WhereCrossServer<OffersMongo>(
+        OurMongosServer.MONGO_53, "offers",
+        s => s.Id, o => o.SubeMongoId,
+        o => o.OfferType == "KASKO" && o.Status == "ACTIVE",
+        @as: "KaskoTeklifler")
+    .Where(s => s.IsActive == true)
+    .OrderBy(s => s.Unvan)
+    .ToListAsync();
+
+// ÖRNEK 3 — WhereCrossServer + LookupCrossServer birlikte
+var list = await _repo.Query<SubelerMongo>()
+    .WhereCrossServer<CariKartlar>(        // önce 52'de filtrele
+        OurMongosServer.MONGO_52, "acente365",
+        s => s.CariKartMongoId, c => c.Id,
+        c => c.Il == "İstanbul",
+        @as: "CariKart")
+    .LookupCrossServer<OffersMongo>(       // sonra 53'ten join yap
+        OurMongosServer.MONGO_53, "offers",
+        s => s.Id, o => o.SubeMongoId,
+        @as: "Teklifler")
     .Where(s => s.IsActive == true)
     .ToListAsync();
 ```
 
----
-
-## 8. Kendi Kendini İyileştiren İndeksleme (Auto-Healing Query Engine)
-
-`GenericMongoQueryBuilder` veritabanındaki yavaş sorguları algılar ve optimize eder.
-
-Eğer herhangi bir sorgu (Ana `_filter`, `LookupCrossServer`, `WhereCrossServer` veya `UpdateMany`) **60 saniyeden uzun sürerse**:
-1. Arka planda (`Task.Run` ile sessizce) bir iyileştirme süreci başlar.
-2. MongoDB'ye gönderilen filtre ağacı (BsonDocument) ayrıştırılır ve içerisindeki sahalar tespit edilir.
-3. İlgili koleksiyona **otomatik Compound Index** (Birleşik İndeks) oluşturulur.
-4. İndeks isimleri her zaman `AUTO_HEAL_idx_Alan1_Alan2` şeklinde başlar.
+> [!NOTE]
+> `WhereCrossServer` sonucu `ExtraElements["@as"]` içinde de döner — hem filtre hem join tek seferde.
 
 ---
 
-## 9. Geliştirici Kısıtlamaları ve Hatalar (Developer Safeguards)
+## 12. Ekleme / Silme (Insert / Delete)
 
-### A. Alias (@as) Çakışma Koruması
-Aynı query builder'da `Lookup` veya `LookupCrossServer` üzerinden aynı `@as` ismi iki kez verilirse `InvalidOperationException` fırlatılır.
-
-### B. Array / Liste Üzerinden Join Atılamaz (NotSupportedException)
-`LookupCrossServer` ve `WhereCrossServer` işlemleri şu anda sadece tekil string/ObjectId gibi alanları desteklemektedir. 
-**Neden Desteklemiyoruz?** Eğer ana tablonuzdaki eşleşme alanı bir `List<string>` (örn: `TargetIds`) olsaydı, on binlerce kaydın içindeki yüz binlerce ID'yi düzleştirip (flatten) karşı sunucuya sormamız gerekecekti. Dönen on binlerce sonucu ise tekrar orijinal nesnelerin içindeki dizilerle tek tek eşleştirmek (In-Memory Intersection) **O(N*M)** yani Kartezyen Çarpım benzeri devasa bir işlem karmaşası yaratacaktı. Bu işlem CPU ve RAM'i felç edeceği için, performansın tahmin edilebilir kalması adına şu an sadece 1-1 (Tekil) eşleşmelere izin veriyoruz. 
-
-### C. UpdateMany Sırasında Join Atılamaz
-Veritabanı bazında kısmi güncelleme yapan `UpdateManyAsync` çağrılarında Cross-Server eşleşme yapılamaz, sistem izin vermez.
-
----
-
-## 10. Diğer Terminal Komutları
-
-Veriyi listeye çekmek (`ToListAsync()`) ve PagedList dışında kullanabileceğiniz bitirici komutlar:
+### InsertOneAsync (Query Builder — hedefli server/db)
 
 ```csharp
-// 1. FirstOrDefaultAsync: Şarta uyan ilk kaydı getirir.
-var firstItem = await repo.Query<SubelerMongo>()
-    .Where(s => s.SubeKodu == 100)
-    .FirstOrDefaultAsync();
-
-// 2. CountAsync: Şarta uyan kayıt sayısını döndürür. (RAM'e veri çekmez, süper hızlıdır).
-var totalActive = await repo.Query<SubelerMongo>()
-    .Where(s => s.IsActive == true)
-    .CountAsync();
-
-// 3. AnyAsync: Şarta uyan kayıt var mı yok mu kontrol eder.
-bool hasRecords = await repo.Query<SubelerMongo>()
-    .Where(s => s.FirmaMongoId == "123")
-    .AnyAsync();
-```
-
----
-
-## 11. Kurulum ve Dependency Injection (DI) Kullanımı
-
-Mimarideki `GenericMongoRepository` sınıfı, `IMongoConnectionManager`'a bağımlıdır. Bir mikroservise veya Job projelerinize eklemek için `Program.cs` veya `Startup.cs` içerisinde IoC konteynerine kaydetmeniz gerekir.
-
-### A. Servis Kayıtları (Program.cs)
-
-```csharp
-// 1. Connection Manager (Uygulama boyunca 1 kez yaratılır)
-builder.Services.AddSingleton<IMongoConnectionManager, MongoConnectionManager>();
-
-// 2. Generic Repository (Her istekte yeni bir kopya yaratılması daha sağlıklıdır)
-builder.Services.AddScoped<IGenericMongoRepository, GenericMongoRepository>();
-```
-
-### B. Constructor Injection (Kullanım)
-
-Herhangi bir Service, Handler veya Background Worker içerisinde constructor'dan isteyerek kullanabilirsiniz:
-
-```csharp
-public class TeklifHesaplamaService
+// ÖRNEK 1 — Belirli server/db'ye ekle
+var lockDoc = new DistributedLockMongo
 {
-    private readonly IGenericMongoRepository _mongoRepo;
+    Resource = "iys-sync",
+    LockedBy = Environment.MachineName,
+    CreatedAt = DateTime.Now
+};
+await _repo.Query<DistributedLockMongo>(OurMongosServer.MONGO_52, "locks")
+    .InsertOneAsync(lockDoc);
 
-    public TeklifHesaplamaService(IGenericMongoRepository mongoRepo)
+// ÖRNEK 2 — Log kaydı ekle
+await _repo.Query<ApiLogMongo>()
+    .InsertOneAsync(new ApiLogMongo
     {
-        _mongoRepo = mongoRepo;
-    }
+        Endpoint = "/api/iys/sync",
+        StatusCode = 200,
+        DurationMs = elapsed,
+        CreatedAt = DateTime.Now
+    });
+```
 
-    public async Task IslemYap()
-    {
-        var aktifKullanici = await _mongoRepo.Query<KullanicilarMongo>()
-            .Where(k => k.IsActive == true)
-            .FirstOrDefaultAsync();
-    }
+### DeleteOneAsync (Query Builder — filtreyle sil)
+
+```csharp
+// ÖRNEK 1 — Distributed lock bırak
+var result = await _repo.Query<DistributedLockMongo>(OurMongosServer.MONGO_52, "locks")
+    .Where(x => x.Resource == "iys-sync" && x.LockedBy == Environment.MachineName)
+    .DeleteOneAsync();
+
+if (result.DeletedCount == 0)
+    _logger.LogWarning("Lock zaten bırakılmış veya başkası tarafından alınmış.");
+
+// ÖRNEK 2 — Süresi dolmuş cache sil
+await _repo.Query<IysTokenCacheMongo>(OurMongosServer.MONGO_52, "tokenDb")
+    .Where(t => t.ExpiresAt < DateTime.Now)
+    .DeleteOneAsync();
+```
+
+> [!TIP]
+> | Metot | Seviye | Server/DB Hedefli | Açıklama |
+> |:------|:-------|:-----------------|:---------|
+> | `InsertAsync` | Repository | Varsayılan | Genel ekleme |
+> | `InsertManyAsync` | Repository | Varsayılan | Toplu ekleme |
+> | `InsertOneAsync` | QueryBuilder | ✅ `.Query<T>(server, db)` | Hedefli server'a ekleme |
+> | `DeleteAsync` | Repository | Varsayılan | ID ile sil |
+> | `DeleteManyAsync` | Repository | Varsayılan | Filtre ile toplu sil |
+> | `DeleteOneAsync` | QueryBuilder | ✅ `.Where().DeleteOneAsync()` | Filtreyle ilk kaydı sil |
+
+---
+
+## 13. Toplu İşlemler (BulkWriteAsync)
+
+Binlerce kaydı tek ağ paketinde gönderir. `IsOrdered = false` ile paralel çalışır.
+
+```csharp
+// ÖRNEK 1 — 10.000 kayıt güncelleme
+var requests = new List<WriteModel<SubelerMongo>>();
+foreach (var item in buyukListe)
+{
+    var filter = Builders<SubelerMongo>.Filter.Eq(x => x.MssqlId, item.MssqlId);
+    var update = Builders<SubelerMongo>.Update
+        .Set(x => x.Unvan, item.Unvan)
+        .Set(x => x.UpdatedAt, DateTime.Now);
+    requests.Add(new UpdateOneModel<SubelerMongo>(filter, update));
+}
+var bulkResult = await _repo.BulkWriteAsync(requests);
+Console.WriteLine($"Güncellenen: {bulkResult.ModifiedCount}");
+
+// ÖRNEK 2 — Upsert ile sync işlemi (varsa güncelle, yoksa ekle)
+var upsertRequests = new List<WriteModel<IysRequestConsentMongo>>();
+foreach (var consent in gelenKayitlar)
+{
+    var filter = Builders<IysRequestConsentMongo>.Filter.Eq(x => x.TransactionId, consent.TransactionId);
+    var update = Builders<IysRequestConsentMongo>.Update
+        .Set(x => x.Status, consent.Status)
+        .Set(x => x.UpdatedAt, DateTime.Now)
+        .SetOnInsert(x => x.CreatedAt, DateTime.Now);
+    upsertRequests.Add(new UpdateOneModel<IysRequestConsentMongo>(filter, update) { IsUpsert = true });
+}
+await _repo.BulkWriteAsync<IysRequestConsentMongo>(
+    upsertRequests, OurMongosServer.MONGO_52, "acente365");
+
+// ÖRNEK 3 — Karma (insert + update + delete)
+var karmaRequests = new List<WriteModel<LogMongo>>();
+karmaRequests.Add(new InsertOneModel<LogMongo>(yeniLog));
+karmaRequests.Add(new UpdateOneModel<LogMongo>(
+    Builders<LogMongo>.Filter.Eq(x => x.Id, eskiId),
+    Builders<LogMongo>.Update.Set(x => x.Archived, true)));
+karmaRequests.Add(new DeleteOneModel<LogMongo>(
+    Builders<LogMongo>.Filter.Lt(x => x.CreatedAt, DateTime.Today.AddYears(-1))));
+await _repo.BulkWriteAsync(karmaRequests);
+```
+
+---
+
+## 14. Transaction / Session
+
+Birden fazla koleksiyonu etkileyen ACID işlemleri için.
+
+> [!WARNING]
+> Transaction'lar **sadece Replica Set kurulumlu** MongoDB'lerde çalışır. Standalone'da hata fırlatır.
+
+```csharp
+// ÖRNEK 1 — Temel transaction
+using var session = await _repo.StartSessionAsync();
+session.StartTransaction();
+try
+{
+    // İşlemler (session parametresi ileride desteklenecek)
+    await session.CommitTransactionAsync();
+}
+catch (Exception ex)
+{
+    await session.AbortTransactionAsync();
+    _logger.LogError(ex, "Transaction rollback yapıldı.");
+    throw;
+}
+
+// ÖRNEK 2 — Farklı sunucu session'ı
+using var session52 = await _repo.StartSessionAsync(OurMongosServer.MONGO_52);
+session52.StartTransaction();
+try
+{
+    // MONGO_52 üzerinde işlemler
+    await session52.CommitTransactionAsync();
+}
+catch
+{
+    await session52.AbortTransactionAsync();
+    throw;
 }
 ```
 
 ---
 
-## 12. ObjectId ve String Dönüşümleri (BsonRepresentation)
+## 15. Server-Side Grid Loading
 
-Repository mimarisi, geliştiriciyi `ObjectId` tipine manuel dönüştürme zahmetinden kurtarmak üzere tasarlanmıştır.
+`LoadServerSideAsync`, DevExtreme DataGrid'den gelen **tüm** grid parametrelerini (filter, sort, paging, headerFilter) native MongoDB sorgusuna çevirir.
 
-`GetByIdAsync` veya `Where` ile ID tabanlı sorgular yaparken MongoDB `_id` değerini `string` olarak (Örn: `"6633b4..."`) göndermeniz yeterlidir:
+> [!IMPORTANT]
+> Bu metot **DevExtreme paketine bağımlı DEĞİLDİR**. Orchestrator projesinde doğrudan kullanılabilir.
+> WebUI tarafında `DataSourceLoadOptionsBase` → `ServerSideLoadOptions` dönüşümü extension method ile yapılır.
+
+### A. Basit Kullanım — Tam Server-Side
 
 ```csharp
-// ÖRNEK: Manuel tip dönüşümü YAPMANIZA GEREK YOKTUR
-var sube = await _mongoRepo.GetByIdAsync<SubelerMongo>("6633b4...id...");
+// ÖRNEK 1 — Controller
+public async Task<object> GetConsentRecords(ServerSideLoadOptions gridOptions, int firmId)
+{
+    return await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+        .Where(x => x.FirmId == firmId)
+        .LoadServerSideAsync(gridOptions);
+}
+
+// ÖRNEK 2 — Lookup ile birlikte
+public async Task<object> GetSubeler(ServerSideLoadOptions gridOptions)
+{
+    return await _repo.Query<SubelerMongo>()
+        .LookupCrossServer<CariKartlar>(
+            OurMongosServer.MONGO_52, "acente365",
+            s => s.CariKartMongoId, c => c.Id, "CariKart")
+        .Where(s => s.IsActive == true)
+        .LoadServerSideAsync(gridOptions);
+}
 ```
 
-**Nasıl Çalışıyor?**
-Base class olan `MongoDbEntity` sınıfımızda Id alanı şu etiketle (attribute) tanımlanmıştır:
+### B. Hibrit — Bazı Alanlar Client-Side
+
 ```csharp
-[BsonId]
-[BsonRepresentation(BsonType.ObjectId)] 
-public string Id { get; set; }
+// Hesaplanmış alanlar MongoDB'de yok → client-side işlensin
+var result = await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+    .Where(x => x.FirmId == firmId)
+    .LoadServerSideAsync(new ServerSideLoadOptions
+    {
+        Filter = rawFilter,
+        Sort = sortArray,
+        Skip = skip,
+        Take = take,
+        ClientSideProperties = new HashSet<string> { "ToplamPrim", "HesaplananKomisyon" }
+    });
 ```
-Bu attribut sayesinde C# MongoDB Sürücüsü, sorgu atarken string ifadenizi arka planda otomatik olarak `ObjectId` tipine çevirir. Veritabanından okurken de `ObjectId`'yi tekrar C# `string`'ine çevirerek size teslim eder. Kısacası hiçbir zaman `new ObjectId("...")` yapmanıza gerek kalmaz.
+
+### C. Tamamı Client-Side (Fallback)
+
+```csharp
+var result = await _repo.Query<KucukKoleksiyonMongo>()
+    .LoadServerSideAsync(new ServerSideLoadOptions
+    {
+        ServerSideFiltering = false,
+        ServerSideSorting   = false,
+        ServerSidePaging    = false,
+        Filter = rawFilter,
+        Skip = 0, Take = 50
+    });
+```
+
+### D. HeaderFilter (Distinct Değerler)
+
+Grid kolon başlığındaki filtre listesi `$group` aggregation ile otomatik çekilir. `Group` parametresi dolu geldiğinde `LoadServerSideAsync` kendisi distinct sorgusu çalıştırır:
+
+```
+Dönüş: { data: [{key: "APPROVED"}, {key: "PENDING"}], groupCount: 2 }
+```
+
+### E. Desteklenen Operatörler
+
+| DevExtreme | MongoDB | Açıklama |
+|:-----------|:--------|:---------|
+| `=` | `$eq` | Eşitlik |
+| `<>` / `!=` | `$ne` | Eşit değil |
+| `>` | `$gt` | Büyüktür |
+| `>=` | `$gte` | Büyük eşit |
+| `<` | `$lt` | Küçüktür |
+| `<=` | `$lte` | Küçük eşit |
+| `contains` | `$regex` (i) | İçerir |
+| `notcontains` | `$not` + `$regex` | İçermez |
+| `startswith` | `$regex` (`^val`) | İle başlar |
+| `endswith` | `$regex` (`val$`) | İle biter |
+
+### F. Server/Client-Side Seçenekleri
+
+| Property | Varsayılan | Açıklama |
+|:---------|:-----------|:---------|
+| `ServerSideFiltering` | `true` | Filtreleme MongoDB'de |
+| `ServerSideSorting` | `true` | Sıralama MongoDB'de |
+| `ServerSidePaging` | `true` | Skip/Take MongoDB'de |
+| `ClientSideProperties` | `null` | Property bazlı client-side hariç tut |
+
+> [!CAUTION]
+> `LoadServerSideAsync` builder'ın internal state'ini (`_filter`, `_sort`, `_skip`, `_take`) değiştirir.
+> Her grid isteği için yeni `Query<T>()` çağrısı yapın — aynı instance'ı yeniden kullanmayın.
 
 ---
 
-## 13. Veri Ekleme ve Silme İşlemleri (Insert / Delete)
+## 16. Direct Repository CRUD
 
-Query Builder (okuma ve kısmi güncelleme) dışında `IGenericMongoRepository` direkt olarak temel CRUD yeteneklerine sahiptir. Yeni veri oluşturmak veya silmek için doğrudan repository metotlarını kullanabilirsiniz.
+Query Builder kullanmadan doğrudan CRUD işlemleri.
 
-### A. Veri Ekleme (Insert)
 ```csharp
-var yeniSube = new SubelerMongo 
-{ 
-    SubeKodu = 999, 
-    Unvan = "Yeni Şube", 
-    IsActive = true 
-};
+// GetByIdAsync
+var sube = await _repo.GetByIdAsync<SubelerMongo>("6633b4...id...");
 
-// Tekli Ekleme (Repository seviyesi)
-await _mongoRepo.InsertAsync(yeniSube);
+// InsertAsync
+var yeniSube = new SubelerMongo { SubeKodu = 999, Unvan = "Test" };
+await _repo.InsertAsync(yeniSube);
 
-// Çoklu Ekleme (Performanslı)
-var subeListesi = new List<SubelerMongo> { /* ... */ };
-await _mongoRepo.InsertManyAsync(subeListesi);
+// InsertManyAsync
+var liste = new List<SubelerMongo> { /* ... */ };
+await _repo.InsertManyAsync(liste);
 
-// Query Builder üzerinden Tekli Ekleme (belirli server/db hedefli)
-var lockDoc = new IysTokenLockMongo
-{
-    FirmGuid = firmGuid,
-    LockedBy = Environment.MachineName,
-    CreatedAt = DateTime.Now
-};
-await repo.Query<IysTokenLockMongo>(OurMongosServer.MONGO_52, "tokenDb")
-    .InsertOneAsync(lockDoc);
+// UpdateAsync (tam replace)
+sube.Unvan = "Güncel İsim";
+await _repo.UpdateAsync(sube.Id, sube);
+
+// DeleteAsync (ID ile)
+await _repo.DeleteAsync<SubelerMongo>("6633b4...id...");
+
+// DeleteManyAsync (filtre ile)
+long silinenSayi = await _repo.DeleteManyAsync<SubelerMongo>(
+    x => x.IsActive == false && x.UpdatedAt < DateTime.Today.AddYears(-1));
+Console.WriteLine($"{silinenSayi} kayıt silindi.");
 ```
 
-### B. Veri Silme (Delete)
-```csharp
-// 1. Direkt ID ile Tekli Silme (Repository seviyesi)
-await _mongoRepo.DeleteAsync<SubelerMongo>("6633b4...id...");
+> [!NOTE]
+> `GetByIdAsync`, `InsertAsync`, `UpdateAsync`, `DeleteAsync` metodlarına `null` id veya entity verilirse `ArgumentNullException` fırlatılır.
 
-// 2. Şarta Göre Toplu Silme (DeleteMany — Repository seviyesi)
-await _mongoRepo.DeleteManyAsync<SubelerMongo>(x => x.IsActive == false && x.MssqlId < 100);
+---
 
-// 3. Query Builder üzerinden Filtrelenmiş Tekli Silme
-var deleteResult = await repo.Query<IysTokenLockMongo>(OurMongosServer.MONGO_52, "tokenDb")
-    .Where(x => x.FirmGuid == firmGuidStr)
-    .DeleteOneAsync();
-// deleteResult.DeletedCount → 1 ise başarılı, 0 ise kayıt bulunamadı
+## 17. Auto-Healing Index Engine
+
+Yavaş sorgular tespit edildiğinde arka planda otomatik index önerisi/oluşturma yapar.
+
+**Davranış:**
+1. Herhangi bir sorgu **60 saniyeyi** aşarsa tetiklenir
+2. MongoDB'ye gönderilen filtre ağacındaki alanlar analiz edilir
+3. İlgili koleksiyona `AUTO_HEAL_idx_Alan1_Alan2` adıyla compound index oluşturulur
+4. Hata olursa sessizce loglanır, asıl uygulama etkilenmez
+
+```
+// Otomatik oluşturulan index adı örneği:
+AUTO_HEAL_idx_FirmId_Status_ConsentDate
 ```
 
 > [!TIP]
-> **InsertOneAsync vs InsertAsync — Fark Nedir?**
->
-> | Metot | Seviye | Server/DB Hedefli | Kullanım |
-> |:------|:-------|:-----------------|:---------|
-> | `InsertAsync` | Repository | Varsayılan DB | Genel veri ekleme |
-> | `InsertOneAsync` | QueryBuilder | ✅ `.Query<T>(server, db)` | Belirli server/db'ye ekleme, distributed lock gibi senaryolar |
-> | `DeleteAsync` | Repository | Varsayılan DB | ID ile silme |
-> | `DeleteOneAsync` | QueryBuilder | ✅ `.Where().DeleteOneAsync()` | Filtre bazlı silme, distributed lock release |
+> Debug modunda `[AUTO-HEAL]` prefix'li log mesajları oluşturulur. Production'da bu loglar `Debug.WriteLine` ile çıkar — monitoring sisteminize yönlendirin.
+
+---
+
+## 18. Geliştirici Kısıtlamaları ve Hatalar
+
+### A. Alias Çakışma Koruması
+```csharp
+// ❌ HATA: Aynı alias iki kez kullanılamaz
+query.Lookup<SubelerMongo>(x => x.SubeId, s => s.Id, @as: "Sube")
+     .Lookup<SubelerMongo>(x => x.SubeId, s => s.Id, @as: "Sube"); // InvalidOperationException!
+
+// ✅ DOĞRU: Benzersiz alias kullan
+query.Lookup<SubelerMongo>(x => x.SubeId, s => s.Id, @as: "SubeBilgisi")
+     .Lookup<MusteriMongo>(x => x.MusteriId, m => m.Id, @as: "MusteriBilgisi");
+```
+
+### B. Array/List Alanlarla Join Yapılamaz
+```csharp
+// ❌ HATA: List<string> tipinde alan kullanılamaz
+.LookupCrossServer<X>(server, db, s => s.TargetIds, ...); // NotSupportedException!
+
+// ✅ DOĞRU: Tekil (1-1) eşleşme alanı kullan
+.LookupCrossServer<X>(server, db, s => s.TargetId, ...);
+```
+
+### C. Update + Lookup Birlikte Kullanılamaz
+```csharp
+// ❌ HATA
+await query.Lookup<X>(...).UpdateOneAsync(update); // NotSupportedException!
+
+// ✅ DOĞRU: Lookup'suz güncelleme
+await query.Where(x => x.Id == id).UpdateOneAsync(update);
+```
+
+### D. BsonCollectionAttribute Zorunluluğu
+```csharp
+// ✅ Her entity'de attribute tanımlı olmalı
+[BsonCollection("subeler")]
+public class SubelerMongo : MongoDbEntity { }
+
+// Attribute yoksa sınıf adı (SubelerMongo) koleksiyon adı olarak kullanılır
+```
+
+### E. Nested Join Desteklenmez
+```csharp
+// ❌ DESTEKLENMIYOR: Çekilen Şube'nin alanından 3. tabloya join
+// (Root entity'den dışarıya join atılabilir, zincirleme nested join yapılamaz)
+```
+
+---
+
+## 19. Kurulum ve DI Kullanımı
+
+### Program.cs / Startup.cs
+
+```csharp
+// Connection Manager — uygulama boyunca tek instance
+builder.Services.AddSingleton<GenericMongoConnectionManager>(
+    _ => GenericMongoConnectionManager.Instance);
+
+// Repository — her istekte yeni instance
+builder.Services.AddScoped<IGenericMongoRepository, GenericMongoRepository>();
+```
+
+### Constructor Injection
+
+```csharp
+// ÖRNEK 1 — Varsayılan server (MONGO_206 / MongoPortal)
+public class SubeService
+{
+    private readonly IGenericMongoRepository _repo;
+
+    public SubeService(IGenericMongoRepository repo)
+    {
+        _repo = repo;
+    }
+
+    public async Task<List<SubelerMongo>> GetAktifSubelerAsync()
+        => await _repo.Query<SubelerMongo>()
+            .Where(s => s.IsActive == true)
+            .OrderBy(s => s.Unvan)
+            .ToListAsync();
+}
+
+// ÖRNEK 2 — Farklı server/db hedefli
+public class IysService
+{
+    private readonly IGenericMongoRepository _repo;
+
+    public IysService(IGenericMongoRepository repo) => _repo = repo;
+
+    public async Task<IysRequestConsentMongo?> GetConsentAsync(string transactionId)
+        => await _repo.Query<IysRequestConsentMongo>(OurMongosServer.MONGO_52, "acente365")
+            .Where(x => x.TransactionId == transactionId)
+            .FirstOrDefaultAsync();
+}
+```
+
+### BsonCollectionAttribute Kullanımı
+
+```csharp
+// Her entity'de koleksiyon adı tanımlanmalı
+[BsonCollection("subeler")]
+[BsonIgnoreExtraElements]
+public class SubelerMongo : MongoDbEntity
+{
+    public int SubeKodu { get; set; }
+    public string Unvan { get; set; }
+    public bool IsActive { get; set; }
+    public string? CariKartMongoId { get; set; }
+}
+```
+
+### ObjectId ve String Dönüşümleri
+
+Repository mimarisi `ObjectId` tipine manuel dönüştürme zahmetinden kurtarır:
+
+```csharp
+// Manuel dönüşüme GEREK YOK
+var sube = await _repo.GetByIdAsync<SubelerMongo>("6633b4...id...");
+
+// MongoDbEntity base class'ta Id tanımı:
+// [BsonId]
+// [BsonRepresentation(BsonType.ObjectId)]
+// public string Id { get; set; }
+```
+
+---
+
+> [!NOTE]
+> **Performans Özeti:**
+> - Collection name'ler `ConcurrentDictionary` ile cache'lenir — her sorguda `ListCollectionNames()` çağrılmaz
+> - Reflection sonuçları (`PropertyInfo`, MongoDB field adları) cache'lenir — tekrar eden filtre/sort çağrılarında maliyet sıfıra yakın
+> - `AnyAsync` → `Limit(1)` kullanır — tüm koleksiyonu saymaz
+> - `ToPagedListAsync` → Count ve Data paralel çekilir
+> - Auto-heal → fire-and-forget, asıl iş akışını bloklamaz
 
