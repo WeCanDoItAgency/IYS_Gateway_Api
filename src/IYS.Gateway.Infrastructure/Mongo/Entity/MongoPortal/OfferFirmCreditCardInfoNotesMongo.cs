@@ -2,6 +2,7 @@ using System;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
+using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 namespace IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 
 [BsonCollection("OfferFirmCreditCardInfoNotes")]
@@ -42,6 +43,4 @@ public class OfferFirmCreditCardInfoNotesMongo : MongoDbEntity
     [BsonRepresentation(BsonType.ObjectId)]
     public string? ManuelOperationsMongoId { get; set; }
 
-    [BsonExtraElements]
-    public BsonDocument ExtraElements { get; set; }
 }

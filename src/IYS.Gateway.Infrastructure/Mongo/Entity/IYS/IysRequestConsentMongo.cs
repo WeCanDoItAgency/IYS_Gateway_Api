@@ -3,6 +3,7 @@ using IYS.Gateway.Infrastructure.Mongo.Entity;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
+using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 namespace IYS.Gateway.Infrastructure.Mongo.Entity.IYS;
 
 /// <summary>
@@ -44,6 +45,4 @@ public class IysRequestConsentMongo : MongoDbEntity
 
     public string? IdentityNumber { get; set; }
 
-    [BsonExtraElements]
-    public BsonDocument ExtraElements { get; set; }
 }

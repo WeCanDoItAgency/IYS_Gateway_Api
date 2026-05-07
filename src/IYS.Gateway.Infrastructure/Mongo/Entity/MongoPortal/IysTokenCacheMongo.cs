@@ -2,6 +2,7 @@ using IYS.Gateway.Infrastructure.Mongo.Entity;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
+using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 namespace IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 
 /// <summary>
@@ -44,6 +45,4 @@ public class IysTokenCacheMongo : MongoDbEntity
     public DateTime UpdatedAt { get; set; }
 
     /// <summary>MongoDB esneklik alanı — gelecekte eklenecek alanlar için</summary>
-    [BsonExtraElements]
-    public BsonDocument? ExtraElements { get; set; }
 }

@@ -1,8 +1,10 @@
-namespace IYS.Gateway.Infrastructure.Mongo.Entity;
+using System;
+
+namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 
 /// <summary>
 /// MongoDB koleksiyon adını entity sınıfına bağlamak için kullanılan attribute.
-/// Sınıf düzeyinde uygulanır.
+/// Repository katmanının parçasıdır.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public class BsonCollectionAttribute : Attribute
