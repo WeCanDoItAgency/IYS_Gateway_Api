@@ -192,6 +192,44 @@ var loglar = await _repo.Query<ApiLogMongo>()
 > [!WARNING]
 > `SelectOnly` ve `IgnoreFields` aynı sorguda birlikte kullanılmamalıdır — MongoDB driver çakışma yaratır.
 
+> [!TIP]
+> `ExtraElements` alanını manuel olarak `IgnoreFields(x => x.ExtraElements)` ile hariç tutmaya **gerek yoktur**.
+> Repository tüm okuma metodlarında (`ToListAsync`, `ToPagedListAsync`, `FirstOrDefaultAsync`,
+> `FindOneAndUpdateAsync`, `FindOneAndDeleteAsync`, `LoadServerSideAsync`) bunu **otomatik olarak** yapar.
+
+---
+
+### ExtraElements Otomatik Hariç Tutma
+
+v2+ itibarıyla tüm sorgu sonuçlarından `ExtraElements` **varsayılan olarak çıkarılır**. Grid'lere, listelere ya da API response'larına karışmaz.
+
+| Sorgu Tipi | ExtraElements Davranışı |
+|---|---|
+| Normal sorgu (join yok) | ❌ Otomatik hariç tutulur |
+| `LookupCrossServer` (cross-server join) | ❌ MongoDB'den hariç, C#'ta in-memory doldurulur |
+| `Lookup` (aynı sunucu `$lookup`) | ✅ Korunur — join datası burada yaşar |
+
+```csharp
+// ✅ ExtraElements otomatik hariç — ek kod gerekmez
+var subeler = await _repo.Query<SubelerMongo>()
+    .Where(s => s.IsActive)
+    .ToListAsync();
+
+// ✅ Cross-server join — ExtraElements MongoDB'den gelmez, C#'ta doldurulur
+var subeler = await _repo.Query<SubelerMongo>()
+    .LookupCrossServer<CariKartlarMongo>(
+        OurMongosServer.Mongo52, "acente365",
+        s => s.CariKartId, c => c.Id,
+        "CariKartDetay")
+    .ToListAsync();
+// s.ExtraElements["CariKartDetay"] erişilebilir ✅
+
+// ✅ Aynı sunucu Lookup — ExtraElements korunur (join datası için şart)
+var subeler = await _repo.Query<SubelerMongo>()
+    .Lookup<FirmaMongo>(s => s.FirmaId, f => f.Id, "FirmaBilgisi")
+    .ToListAsync();
+```
+
 ---
 
 ## 5. Terminal — Veri Okuma

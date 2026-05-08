@@ -157,6 +157,38 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             return this;
         }
 
+        /// <summary>
+        /// Geçerli projection definition'ını oluşturur.
+        /// <para>
+        /// Aynı sunucu <c>$lookup</c> aşaması yoksa, <c>ExtraElements</c> alanı otomatik olarak
+        /// hariç tutulur. Bu sayede grid ve liste sonuçlarına gereksiz join/extra veri karışmaz.
+        /// </para>
+        /// <para>
+        /// Cross-server <see cref="LookupCrossServer{TForeign}"/> etkilenmez; join verisi
+        /// MongoDB sorgusundan değil, C# tarafında in-memory olarak <c>ExtraElements</c>'e eklenir.
+        /// </para>
+        /// <para>
+        /// Aynı sunucu <see cref="Lookup{TForeign}"/> varsa bu metot <c>_projection</c>'ı
+        /// olduğu gibi döndürür — <c>ExtraElements</c> hariç tutulmaz çünkü join datası orada yaşar.
+        /// </para>
+        /// </summary>
+        private ProjectionDefinition<T>? BuildEffectiveProjection()
+        {
+            // Aynı sunucu $lookup varsa ExtraElements join datası içerir — dokunma
+            if (_lookupStages.Count > 0)
+                return _projection;
+
+            // ExtraElements property'si olan entity'lerde otomatik exclude
+            if (typeof(T).GetProperty("ExtraElements") != null)
+            {
+                return _projection == null
+                    ? Builders<T>.Projection.Exclude("ExtraElements")
+                    : _projection.Exclude("ExtraElements");
+            }
+
+            return _projection;
+        }
+
         private void EnsureNotArray(PropertyInfo propertyInfo)
         {
             if (propertyInfo.PropertyType != typeof(string) && typeof(System.Collections.IEnumerable).IsAssignableFrom(propertyInfo.PropertyType))
@@ -417,7 +449,8 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
                 if (_sort != null) options.Sort = _sort;
                 if (_skip.HasValue) options.Skip = _skip;
                 if (_take.HasValue) options.Limit = _take;
-                if (_projection != null) options.Projection = _projection;
+                var proj = BuildEffectiveProjection();
+                if (proj != null) options.Projection = proj;
 
                 var sw = Stopwatch.StartNew();
                 var cursor = await _collection.FindAsync(_filter, options, ct);
@@ -565,7 +598,8 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             var sw = Stopwatch.StartNew();
             var options = new FindOneAndUpdateOptions<T>
             {
-                ReturnDocument = returnAfter ? ReturnDocument.After : ReturnDocument.Before
+                ReturnDocument = returnAfter ? ReturnDocument.After : ReturnDocument.Before,
+                Projection = BuildEffectiveProjection()
             };
             var result = await _collection.FindOneAndUpdateAsync(_filter, update, options, ct);
             sw.Stop();
@@ -583,7 +617,12 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             }
 
             var sw = Stopwatch.StartNew();
-            var result = await _collection.FindOneAndDeleteAsync(_filter, cancellationToken: ct);
+            var options = new FindOneAndDeleteOptions<T>
+            {
+                Sort = _sort,
+                Projection = BuildEffectiveProjection()
+            };
+            var result = await _collection.FindOneAndDeleteAsync(_filter, options, ct);
             sw.Stop();
             CheckAndHealIndexes(sw, _collection, _filter);
 
@@ -718,7 +757,8 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
                     if (_sort != null) findOptions.Sort = _sort;
                     if (_skip.HasValue) findOptions.Skip = _skip;
                     if (_take.HasValue) findOptions.Limit = _take;
-                    if (_projection != null) findOptions.Projection = _projection;
+                    var proj = BuildEffectiveProjection();
+                    if (proj != null) findOptions.Projection = proj;
 
                     var sw = Stopwatch.StartNew();
                     var cursor = await _collection.FindAsync(_filter, findOptions, ct);
