@@ -8,7 +8,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using IYS.Gateway.Infrastructure.Mongo.Entity;
-using IYS.Gateway.Infrastructure.Mongo.Entity;
+using IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 using IYS.Gateway.Infrastructure.Mongo.Settings;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
@@ -41,6 +41,8 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
         private readonly List<Func<List<T>, CancellationToken, Task>> _crossServerLookups = new();
         private readonly List<Func<CancellationToken, Task>> _reverseLookups = new();
         private readonly HashSet<string> _usedAliases = new();
+        /// <summary>SelectOnly çağrıldığında true olur. Inclusion projection varken Exclude eklemeyi engeller.</summary>
+        private bool _hasInclusions = false;
 
         /// <summary>
         /// Reflection sonuçlarını cache'ler. Key: "TypeName:PropertyName" → Value: PropertyInfo.
@@ -56,6 +58,7 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
         /// </summary>
         /// <param name="collection">Hedef MongoDB koleksiyonu.</param>
         /// <param name="repository">Cross-server sorguları için repository referansı.</param>
+        /// <param name="logger">Yapısal loglama için logger instance.</param>
         /// <exception cref="ArgumentNullException"><paramref name="collection"/> veya <paramref name="repository"/> null ise.</exception>
         public GenericMongoQueryBuilder(IMongoCollection<T> collection, IGenericMongoRepository repository)
         {
@@ -115,6 +118,7 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
                 if (field == null) continue;
                 _projection = _projection == null ? builder.Include(field) : _projection.Include(field);
             }
+            _hasInclusions = true;
             return this;
         }
 
@@ -181,6 +185,10 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             // ExtraElements property'si olan entity'lerde otomatik exclude
             if (typeof(T).GetProperty("ExtraElements") != null)
             {
+                // Inclusion projection varsa Exclude eklenemez (MongoDB kuralı) — olduğu gibi döndür
+                if (_hasInclusions)
+                    return _projection;
+
                 return _projection == null
                     ? Builders<T>.Projection.Exclude("ExtraElements")
                     : _projection.Exclude("ExtraElements");
@@ -730,6 +738,7 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             // ── 5. VERİ ÇEKME ─────────────────────────────────────────
             long totalCount = -1;
             List<T> data;
+            List<BsonDocument> rawBsonDocs = null; // Lookup varsa BsonDocument olarak da sakla
 
             if (options.RequireTotalCount)
             {
@@ -749,7 +758,11 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
                 List<T> rawData;
                 if (_lookupStages.Count > 0)
                 {
-                    rawData = await ExecuteAggregationAsync(ct);
+                    // $lookup sonuçlarını kaybetmemek için BsonDocument olarak çek
+                    rawBsonDocs = await ExecuteAggregationAsBsonAsync(ct);
+                    rawData = rawBsonDocs
+                        .Select(doc => BsonSerializer.Deserialize<T>(doc))
+                        .ToList();
                 }
                 else
                 {
@@ -791,7 +804,56 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             return new ServerSideLoadResult
             {
                 Data = data,
-                TotalCount = totalCount
+                TotalCount = totalCount,
+                RawBsonDocuments = rawBsonDocs // Lookup sonuçları için ham BsonDocument'lar
+            };
+        }
+
+        /// <summary>
+        /// LoadServerSideAsync sonucunu typed DTO'ya dönüştürür.
+        /// $lookup sonuçları BsonDocument üzerinden deserialize edilir — T entity'si lookup alanlarını kaybetmez.
+        /// </summary>
+        public async Task<ServerSideLoadResult<TResult>> LoadServerSideAsync<TResult>(
+            ServerSideLoadOptions options, CancellationToken ct = default)
+        {
+            var rawResult = await LoadServerSideAsync(options, ct);
+
+            if (rawResult.GroupCount >= 0)
+            {
+                return new ServerSideLoadResult<TResult>
+                {
+                    Data = new List<TResult>(),
+                    TotalCount = rawResult.TotalCount,
+                    GroupCount = rawResult.GroupCount
+                };
+            }
+
+            List<TResult> typed;
+
+            // Lookup varsa ham BsonDocument'lardan deserialize et
+            // (T tipine deserialize $lookup alanlarını kaybeder)
+            if (rawResult.RawBsonDocuments != null && rawResult.RawBsonDocuments.Count > 0)
+            {
+                typed = rawResult.RawBsonDocuments
+                    .Select(doc => BsonSerializer.Deserialize<TResult>(doc))
+                    .ToList();
+            }
+            else if (rawResult.Data is List<T> sourceList)
+            {
+                typed = sourceList
+                    .Select(item => BsonSerializer.Deserialize<TResult>(item.ToBsonDocument()))
+                    .ToList();
+            }
+            else
+            {
+                typed = new List<TResult>();
+            }
+
+            return new ServerSideLoadResult<TResult>
+            {
+                Data = typed,
+                TotalCount = rawResult.TotalCount,
+                GroupCount = rawResult.GroupCount
             };
         }
 
@@ -922,6 +984,38 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
 
         private async Task<List<T>> ExecuteAggregationAsync(CancellationToken ct)
         {
+            var pipeline = BuildAggregationPipeline();
+
+            var sw = Stopwatch.StartNew();
+            var cursor = await _collection.AggregateAsync<T>(PipelineDefinition<T, T>.Create(pipeline), cancellationToken: ct);
+            var results = await cursor.ToListAsync(ct);
+            sw.Stop();
+            CheckAndHealIndexes(sw, _collection, _filter);
+            return results;
+        }
+
+        /// <summary>
+        /// Aggregation pipeline'ı BsonDocument olarak çalıştırır.
+        /// $lookup sonuçları T tipinde kaybolmaz — ham BsonDocument döner.
+        /// </summary>
+        private async Task<List<BsonDocument>> ExecuteAggregationAsBsonAsync(CancellationToken ct)
+        {
+            var pipeline = BuildAggregationPipeline();
+
+            var sw = Stopwatch.StartNew();
+            var cursor = await _collection.AggregateAsync<BsonDocument>(
+                PipelineDefinition<T, BsonDocument>.Create(pipeline), cancellationToken: ct);
+            var results = await cursor.ToListAsync(ct);
+            sw.Stop();
+            CheckAndHealIndexes(sw, _collection, _filter);
+            return results;
+        }
+
+        /// <summary>
+        /// Aggregation pipeline aşamalarını oluşturur ($match, $lookup, $sort, $skip, $limit).
+        /// </summary>
+        private List<BsonDocument> BuildAggregationPipeline()
+        {
             var pipeline = new List<BsonDocument>();
             
             if (_filter != Builders<T>.Filter.Empty)
@@ -943,12 +1037,7 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
             if (_skip.HasValue) pipeline.Add(new BsonDocument("$skip", _skip.Value));
             if (_take.HasValue) pipeline.Add(new BsonDocument("$limit", _take.Value));
 
-            var sw = Stopwatch.StartNew();
-            var cursor = await _collection.AggregateAsync<T>(PipelineDefinition<T, T>.Create(pipeline), cancellationToken: ct);
-            var results = await cursor.ToListAsync(ct);
-            sw.Stop();
-            CheckAndHealIndexes(sw, _collection, _filter);
-            return results;
+            return pipeline;
         }
 
         private static string GetMongoFieldName<TSource, TReturn>(Expression<Func<TSource, TReturn>> expression)
@@ -1054,15 +1143,14 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
                             
                             await collection.Indexes.CreateOneAsync(indexModel);
 
-                            Debug.WriteLine(
-                                $"[AUTO-HEAL] Index oluşturuldu: {collection.CollectionNamespace.CollectionName}.{indexName} " +
-                                $"(Süre: {sw.Elapsed.TotalSeconds:F1}s)");
+                            Console.WriteLine(
+                                $"[AUTO-HEAL] Index oluşturuldu: {collection.CollectionNamespace.CollectionName}.{indexName} (Süre: {sw.Elapsed.TotalSeconds:F1}s)");
                         }
                     }
                     catch (Exception ex)
                     {
                         // Auto-heal hatası asıl uygulamayı durdurmamalı — loglayıp devam
-                        Debug.WriteLine(
+                        Console.WriteLine(
                             $"[AUTO-HEAL] Index oluşturma hatası ({typeof(THeal).Name}): {ex.Message}");
                     }
                 });

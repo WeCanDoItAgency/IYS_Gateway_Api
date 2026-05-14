@@ -293,5 +293,9 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
         /// <param name="ct">İptal token'ı.</param>
         /// <returns>Veri, toplam sayı ve grup bilgisi içeren <see cref="ServerSideLoadResult"/>.</returns>
         Task<ServerSideLoadResult> LoadServerSideAsync(ServerSideLoadOptions options, CancellationToken ct = default);
+        /// <summary>
+        /// Typed projection ile LoadServerSideAsync. Sonucu TResult DTO'suna deserialize eder.
+        /// </summary>
+        Task<ServerSideLoadResult<TResult>> LoadServerSideAsync<TResult>(ServerSideLoadOptions options, CancellationToken ct = default);
     }
 }

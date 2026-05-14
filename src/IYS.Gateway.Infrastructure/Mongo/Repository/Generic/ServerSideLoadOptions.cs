@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using MongoDB.Bson;
 
 namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
 {
@@ -102,6 +103,37 @@ namespace IYS.Gateway.Infrastructure.Mongo.Repository.Generic
     {
         /// <summary>Veri listesi (List&lt;T&gt; veya group data).</summary>
         public object Data { get; set; }
+
+        /// <summary>Toplam kayıt sayısı. -1 ise hesaplanmadı.</summary>
+        public long TotalCount { get; set; } = -1;
+
+        /// <summary>Grup sayısı (headerFilter için). -1 ise hesaplanmadı.</summary>
+        public int GroupCount { get; set; } = -1;
+
+        /// <summary>
+        /// $lookup içeren aggregation pipeline'ından dönen ham BsonDocument'lar.
+        /// Typed DTO deserializasyonu sırasında lookup alanlarının kaybolmaması için kullanılır.
+        /// Lookup yoksa null kalır.
+        /// </summary>
+        public List<BsonDocument> RawBsonDocuments { get; set; }
+    }
+
+    /// <summary>
+    /// Typed server-side yükleme sonucu.
+    /// <para>
+    /// <see cref="IGenericMongoQueryBuilder{T}.LoadServerSideAsync{TResult}"/> ile kullanılır.
+    /// Lookup join sonuçları <typeparamref name="TResult"/> DTO'nun <c>[BsonElement("alias")]</c>
+    /// property'lerine otomatik deserialize edilir — <c>dict["X"]</c> pattern'ına gerek kalmaz.
+    /// </para>
+    /// </summary>
+    /// <typeparam name="TResult">
+    /// Grid DTO tipi. <c>MongoDbEntity</c>'den türemek zorunda değildir.
+    /// Join alias'larını eşlemek için ilgili property'lere <c>[BsonElement("alias")]</c> ekleyin.
+    /// </typeparam>
+    public class ServerSideLoadResult<TResult>
+    {
+        /// <summary>Typed veri listesi.</summary>
+        public List<TResult> Data { get; set; }
 
         /// <summary>Toplam kayıt sayısı. -1 ise hesaplanmadı.</summary>
         public long TotalCount { get; set; } = -1;
