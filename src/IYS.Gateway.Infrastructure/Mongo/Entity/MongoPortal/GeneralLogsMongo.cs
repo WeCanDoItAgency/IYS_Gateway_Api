@@ -1,8 +1,7 @@
 using System;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using Portal2021.Core.Mongo.Attributes;
-using Portal2021.Core.Mongo.Entity.Base;
+using IYS.Gateway.Infrastructure.Mongo.Repository.Generic;
 
 namespace IYS.Gateway.Infrastructure.Mongo.Entity.MongoPortal;
 
